@@ -30,7 +30,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 )
 
-const failedCreateHostDeviceFmt = "failed to create hostdevice for %s: %v"
+const FailedCreateHostDeviceFmt = "failed to create hostdevice for %s: %v"
 
 type HostDeviceMetaData struct {
 	AliasPrefix       string
@@ -49,7 +49,7 @@ type AddressPooler interface {
 }
 
 func CreatePCIHostDevices(hostDevicesData []HostDeviceMetaData, pciAddrPool AddressPooler) ([]api.HostDevice, error) {
-	return createHostDevices(hostDevicesData, pciAddrPool, createPCIHostDevice)
+	return createHostDevices(hostDevicesData, pciAddrPool, CreatePCIHostDevice)
 }
 
 func isVgpuDisplaySet(hostDevicesData []HostDeviceMetaData) bool {
@@ -93,7 +93,7 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 	for _, hostDeviceData := range hostDevicesData {
 		address, err := addrPool.Pop(hostDeviceData.ResourceName)
 		if err != nil {
-			return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
+			return nil, fmt.Errorf(FailedCreateHostDeviceFmt, hostDeviceData.Name, err)
 		}
 
 		// if pop succeeded but the address is empty, ignore the device and let the caller
@@ -104,11 +104,11 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 
 		hostDevice, err := createHostDev(hostDeviceData, address)
 		if err != nil {
-			return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
+			return nil, fmt.Errorf(FailedCreateHostDeviceFmt, hostDeviceData.Name, err)
 		}
 		if hostDeviceData.DecorateHook != nil {
 			if err := hostDeviceData.DecorateHook(hostDevice); err != nil {
-				return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
+				return nil, fmt.Errorf(FailedCreateHostDeviceFmt, hostDeviceData.Name, err)
 			}
 		}
 		hostDevices = append(hostDevices, *hostDevice)
@@ -122,7 +122,7 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 	return hostDevices, nil
 }
 
-func createPCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress string) (*api.HostDevice, error) {
+func CreatePCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress string) (*api.HostDevice, error) {
 	hostAddr, err := device.NewPciAddressField(hostPCIAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PCI device for %s: %v", hostDeviceData.Name, err)

@@ -876,7 +876,21 @@ var _ = Describe("Converter", func() {
 				c.Architecture = archconverter.NewConverter(amd64)
 				vmiArchMutate(amd64, vmi, c)
 				spec := vmiToDomain(vmi, c).Spec.DeepCopy()
-				Expect(PlacePCIDevicesOnRootComplex(spec)).To(Succeed())
+				baseDevice := api.HostDevice{}
+				baseAddress := api.Address{}
+				baseAddress.Slot = "0x00"
+				baseDevice.Source = api.HostDeviceSource{Address: &baseAddress}
+				device1Function0 := baseDevice.DeepCopy()
+				device1Function0.Source.Address.Bus = "0x00"
+				device1Function0.Source.Address.Function = "0x0"
+				device1Function1 := baseDevice.DeepCopy()
+				device1Function1.Source.Address.Bus = "0x00"
+				device1Function1.Source.Address.Function = "0x1"
+				device2Function0 := baseDevice.DeepCopy()
+				device2Function0.Source.Address.Bus = "0x01"
+				device2Function0.Source.Address.Function = "0x0"
+				multiFunctionHostDevices := []api.HostDevice{*device1Function0.DeepCopy(), *device1Function1.DeepCopy(), *device2Function0.DeepCopy()}
+				Expect(PlacePCIDevicesOnRootComplex(spec, multiFunctionHostDevices)).To(Succeed())
 				data, err := xml.MarshalIndent(spec, "", "  ")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(string(data)).To(Equal(convertedDomainWithDevicesOnRootBus))

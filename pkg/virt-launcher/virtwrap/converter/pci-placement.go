@@ -88,9 +88,25 @@ func CountPCIDevices(spec *api.DomainSpec) (count int, err error) {
 	return count, err
 }
 
-func PlacePCIDevicesOnRootComplex(spec *api.DomainSpec) (err error) {
+func PlacePCIDevicesOnRootComplex(spec *api.DomainSpec, multiFunctionHostDevices []api.HostDevice) error {
 	assigner := newRootSlotAssigner()
-	return iteratePCIAddresses(spec, assigner.PlacePCIDeviceAtNextSlot)
+	err := iteratePCIAddresses(spec, assigner.PlacePCIDeviceAtNextSlot)
+	if err != nil {
+		return err
+	}
+
+	// multiFunctionHostDevices is sorted and always contains a device with function 0
+	for i := range multiFunctionHostDevices {
+		addr, err := assigner.PlacePCIDeviceAtNextBusPreserveFunction(multiFunctionHostDevices[i].Source.Address)
+		if err != nil {
+			return err
+		}
+		multiFunctionHostDevices[i].Address = addr
+	}
+
+	spec.Devices.HostDevices = append(spec.Devices.HostDevices, multiFunctionHostDevices...)
+
+	return nil
 }
 
 func (p *pciRootSlotAssigner) nextSlot() (int, error) {
@@ -108,18 +124,55 @@ func (p *pciRootSlotAssigner) nextSlot() (int, error) {
 	}
 
 	if slot >= 0x20 {
-		return slot, fmt.Errorf("No space left on the root PCI bus.")
+		return slot, fmt.Errorf("no space left on the root PCI bus")
 	}
 	p.slot = slot
 	return slot, nil
 }
 
+func (p *pciRootSlotAssigner) nextBus() (int, error) {
+	bus := p.bus + 1
+
+	if bus >= 0x20 { // TODO: correct this number
+		return bus, fmt.Errorf("max pci bus allocation reached")
+	}
+	p.bus = bus
+	return bus, nil
+}
+
 func newRootSlotAssigner() *pciRootSlotAssigner {
-	return &pciRootSlotAssigner{slot: -1}
+	return &pciRootSlotAssigner{slot: -1, bus: 0}
 }
 
 type pciRootSlotAssigner struct {
 	slot int
+	bus  int
+}
+
+func (p *pciRootSlotAssigner) PlacePCIDeviceAtNextBusPreserveFunction(sourceAddress *api.Address) (*api.Address, error) {
+	if sourceAddress == nil {
+		return nil, fmt.Errorf("when preserving function, sourceAddress parameter must have value")
+	}
+
+	bus := ""
+	if sourceAddress.Function == "0" || sourceAddress.Function == "0x0" {
+		busNum, err := p.nextBus()
+		if err != nil {
+			return nil, err
+		}
+		bus = fmt.Sprintf("%#02x", busNum)
+	}
+	if bus == "" {
+		bus = fmt.Sprintf("%#02x", p.bus)
+	}
+
+	address := api.Address{}
+	address.Type = api.AddressPCI
+	address.Domain = "0x0000"
+	address.Bus = bus
+	address.Slot = "0x00"
+	address.Function = sourceAddress.Function
+	return &address, nil
 }
 
 func (p *pciRootSlotAssigner) PlacePCIDeviceAtNextSlot(address *api.Address) (*api.Address, error) {

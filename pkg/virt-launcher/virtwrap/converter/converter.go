@@ -100,6 +100,7 @@ type ConverterContext struct {
 	SMBios                          *cmdv1.SMBios
 	SRIOVDevices                    []api.HostDevice
 	GenericHostDevices              []api.HostDevice
+	MultiFunctionHostDevices        []api.HostDevice
 	GPUHostDevices                  []api.HostDevice
 	EFIConfiguration                *EFIConfiguration
 	MemBalloonStatsPeriod           uint
@@ -1927,7 +1928,7 @@ func Convert_v1_VirtualMachineInstance_To_api_Domain(vmi *v1.VirtualMachineInsta
 	}
 
 	if val := vmi.Annotations[v1.PlacePCIDevicesOnRootComplex]; val == "true" {
-		if err := PlacePCIDevicesOnRootComplex(&domain.Spec); err != nil {
+		if err := PlacePCIDevicesOnRootComplex(&domain.Spec, c.MultiFunctionHostDevices); err != nil {
 			return err
 		}
 	}

@@ -1048,6 +1048,7 @@ func (PciHostDevice) SwaggerDoc() map[string]string {
 		"pciVendorSelector":        "The vendor_id:product_id tuple of the PCI device",
 		"resourceName":             "The name of the resource that is representing the device. Exposed by\na device plugin and requested by VMs. Typically of the form\nvendor.com/product_name",
 		"externalResourceProvider": "If true, KubeVirt will leave the allocation and monitoring to an\nexternal device plugin",
+		"groupFunctions":           "If true, all shared functions of a device will be passed to the VM\nand each device with all of its functions will be treated as a schedulable unit",
 	}
 }
 

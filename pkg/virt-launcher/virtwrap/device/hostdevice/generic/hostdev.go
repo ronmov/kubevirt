@@ -21,11 +21,15 @@ package generic
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	v1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/log"
 
 	drautil "kubevirt.io/kubevirt/pkg/dra"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
+	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice"
 )
 
@@ -33,6 +37,7 @@ const (
 	failedCreateGenericHostDevicesFmt = "failed to create generic host-devices: %v"
 	AliasPrefix                       = "hostdevice-"
 	DefaultDisplayOff                 = false
+	pciBasePath                       = "/sys/bus/pci/devices"
 )
 
 func CreateHostDevices(vmiHostDevices []v1.HostDevice) ([]api.HostDevice, error) {
@@ -99,4 +104,76 @@ func validateCreationOfDevicePluginsDevices(genericHostDevices []v1.HostDevice, 
 		return fmt.Errorf("the number of device plugin HostDevice/s do not match the number of devices:\nHostDevice: %v\nDevice: %v", hostDevsWithDP, hostDevices)
 	}
 	return nil
+}
+
+func getDeviceIdentifier(addr *api.Address) string {
+	return addr.Domain + addr.Bus + addr.Slot
+}
+
+func getPCIDeviceToFunctions() (map[string][]string, error) {
+	pciDeviceToFunctions := make(map[string][]string)
+	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
+		hostAddr, err := device.NewPciAddressField(info.Name())
+		if err != nil {
+			return nil
+		}
+
+		deviceID := getDeviceIdentifier(hostAddr)
+		pciDeviceToFunctions[deviceID] = append(pciDeviceToFunctions[deviceID], hostAddr.Function)
+		return nil
+	})
+	if err != nil {
+		log.DefaultLogger().Reason(err).Errorf("failed to discover PCI device functions")
+		return nil, err
+	}
+	return pciDeviceToFunctions, nil
+}
+
+// Constructs a list of HostDevices for a given set of VMI HostDevice definitions,
+// specifically handling multifunction PCI devices.
+//
+// For each multifunction PCI device, this function guarantees that all associated functions of the same device
+// will appear in order in the resulting slice. The primary function is listed first, followed by any additional
+// functions discovered via getPCIDeviceToFunctions.
+func CreateMultiFunctionHostDevices(vmiHostDevices []v1.HostDevice) ([]api.HostDevice, error) {
+	var hostDevices []api.HostDevice
+
+	multiFunctionPCIPool := hostdevice.NewBestEffortAddressPool(NewMultiFunctionPCIAddressPool(vmiHostDevices))
+	hostDevicesMetaData := createHostDevicesMetadata(vmiHostDevices)
+
+	PCIDeviceToFunctions, err := getPCIDeviceToFunctions()
+	if err != nil {
+		log.DefaultLogger().Reason(err).Error("failed to get PCI device functions")
+		return nil, err
+	}
+
+	for _, deviceMetaData := range hostDevicesMetaData {
+		address, err := multiFunctionPCIPool.Pop(deviceMetaData.ResourceName)
+		if err != nil {
+			return nil, fmt.Errorf(hostdevice.FailedCreateHostDeviceFmt, deviceMetaData.Name, err)
+		}
+		if address == "" {
+			continue // Not a multifunction PCI device
+		}
+
+		hostDevice, err := hostdevice.CreatePCIHostDevice(deviceMetaData, address)
+		if err != nil {
+			return nil, fmt.Errorf(hostdevice.FailedCreateHostDeviceFmt, deviceMetaData.Name, err)
+		}
+
+		hostDevices = append(hostDevices, *hostDevice)
+
+		deviceID := getDeviceIdentifier(hostDevice.Source.Address)
+		for _, currHostFunction := range PCIDeviceToFunctions[deviceID] {
+			currDeviceCopy := hostDevice.DeepCopy()
+			currDeviceCopy.Source.Address.Function = currHostFunction
+			currDeviceCopy.Alias = api.NewUserDefinedAlias(currDeviceCopy.Alias.GetName() + "-func-" + currHostFunction)
+			hostDevices = append(hostDevices, *currDeviceCopy)
+		}
+	}
+	return hostDevices, nil
 }

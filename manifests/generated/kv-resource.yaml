@@ -809,6 +809,11 @@ spec:
                                 If true, KubeVirt will leave the allocation and monitoring to an
                                 external device plugin
                               type: boolean
+                            groupFunctions:
+                              description: |-
+                                If true, all shared functions of a device will be passed to the VM
+                                and each device with all of its functions will be treated as a schedulable unit
+                              type: boolean
                             pciVendorSelector:
                               description: The vendor_id:product_id tuple of the PCI
                                 device
@@ -4101,6 +4106,11 @@ spec:
                               description: |-
                                 If true, KubeVirt will leave the allocation and monitoring to an
                                 external device plugin
+                              type: boolean
+                            groupFunctions:
+                              description: |-
+                                If true, all shared functions of a device will be passed to the VM
+                                and each device with all of its functions will be treated as a schedulable unit
                               type: boolean
                             pciVendorSelector:
                               description: The vendor_id:product_id tuple of the PCI

@@ -1103,6 +1103,12 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		}
 		c.GenericHostDevices = genericHostDevices
 
+		multiFunctionHostDevices, err := generic.CreateMultiFunctionHostDevices(vmi.Spec.Domain.Devices.HostDevices)
+		if err != nil {
+			return nil, err
+		}
+		c.MultiFunctionHostDevices = multiFunctionHostDevices
+
 		genericDRAHostDevices, err := dra.CreateDRAHostDevices(vmi)
 		if err != nil {
 			return nil, err
