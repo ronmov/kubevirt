@@ -25,6 +25,7 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 
 	drautil "kubevirt.io/kubevirt/pkg/dra"
+	hwutil "kubevirt.io/kubevirt/pkg/util/hardware"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice"
 )
@@ -37,11 +38,12 @@ const (
 
 func CreateHostDevices(vmiHostDevices []v1.HostDevice) ([]api.HostDevice, error) {
 	return CreateHostDevicesFromPools(vmiHostDevices,
-		NewPCIAddressPool(vmiHostDevices), NewMDEVAddressPool(vmiHostDevices), NewUSBAddressPool(vmiHostDevices))
+		NewPCIAddressPool(vmiHostDevices), NewMultiFunctionPCIAddressPool(vmiHostDevices), NewMDEVAddressPool(vmiHostDevices), NewUSBAddressPool(vmiHostDevices))
 }
 
-func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, mdevAddressPool, usbAddressPool hostdevice.AddressPooler) ([]api.HostDevice, error) {
+func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, multiFunctionPciAddressPool, mdevAddressPool, usbAddressPool hostdevice.AddressPooler) ([]api.HostDevice, error) {
 	pciPool := hostdevice.NewBestEffortAddressPool(pciAddressPool)
+	multiFunctionPciPool := hostdevice.NewBestEffortAddressPool(multiFunctionPciAddressPool)
 	mdevPool := hostdevice.NewBestEffortAddressPool(mdevAddressPool)
 	usbPool := hostdevice.NewBestEffortAddressPool(usbAddressPool)
 
@@ -50,12 +52,19 @@ func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, 
 	if err != nil {
 		return nil, fmt.Errorf(failedCreateGenericHostDevicesFmt, err)
 	}
+
+	multiFunctionPciHostDevices, err := hostdevice.CreateMultiFunctionPCIHostDevices(hostDevicesMetaData, multiFunctionPciPool, hwutil.GetPCIDeviceToFunctions)
+	if err != nil {
+		return nil, fmt.Errorf(failedCreateGenericHostDevicesFmt, err)
+	}
+	hostDevices := append(pciHostDevices, multiFunctionPciHostDevices...)
+
 	mdevHostDevices, err := hostdevice.CreateMDEVHostDevices(hostDevicesMetaData, mdevPool, DefaultDisplayOff)
 	if err != nil {
 		return nil, fmt.Errorf(failedCreateGenericHostDevicesFmt, err)
 	}
 
-	hostDevices := append(pciHostDevices, mdevHostDevices...)
+	hostDevices = append(hostDevices, mdevHostDevices...)
 
 	usbHostDevices, err := hostdevice.CreateUSBHostDevices(hostDevicesMetaData, usbPool)
 	if err != nil {
