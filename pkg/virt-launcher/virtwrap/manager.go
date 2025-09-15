@@ -2230,6 +2230,15 @@ func addToDeviceMetadata(metadataType cloudinit.DeviceMetadataType, address *api
 	return devicesMetadata
 }
 
+func getOriginalHostDeviceName(alias string) string {
+	// host devices use this naming scheme "hostdevice-f0x0-<original-device-name>"
+	if strings.HasPrefix(alias, generic.AliasPrefix) {
+		parts := strings.Split(alias, "-")
+		return alias[len(parts[0])+len(parts[1])+2:]
+	}
+	return alias
+}
+
 func getDeviceNUMACPUAffinity(dev api.HostDevice, vmi *v1.VirtualMachineInstance, domainSpec *api.DomainSpec) (numaNodePtr *uint32, cpuList []uint32) {
 	if dev.Source.Address != nil {
 		pciAddress := formatPCIAddressStr(dev.Source.Address)
@@ -2303,7 +2312,7 @@ func (l *LibvirtDomainManager) buildDevicesMetadata(vmi *v1.VirtualMachineInstan
 	hostDevices := devices.HostDevices
 	for _, dev := range hostDevices {
 		devAliasNoPrefix := strings.TrimPrefix(dev.Alias.GetName(), netsriov.SRIOVAliasPrefix)
-		hostDevAliasNoPrefix := strings.TrimPrefix(dev.Alias.GetName(), generic.AliasPrefix)
+		hostDevAliasNoPrefix := getOriginalHostDeviceName(dev.Alias.GetName())
 		gpuDevAliasNoPrefix := strings.TrimPrefix(dev.Alias.GetName(), gpu.AliasPrefix)
 		if data, exist := taggedInterfaces[devAliasNoPrefix]; exist {
 			deviceNumaNode, deviceAlignedCPUs := getDeviceNUMACPUAffinity(dev, vmi, domainSpec)

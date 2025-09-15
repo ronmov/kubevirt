@@ -145,7 +145,7 @@ func createPCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress strin
 		return nil, fmt.Errorf("failed to create PCI device for %s: %v", hostDeviceData.Name, err)
 	}
 	domainHostDevice := &api.HostDevice{
-		Alias:   api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + hostDeviceData.Name),
+		Alias:   api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + "f" + hostAddr.Function + "-" + hostDeviceData.Name),
 		Source:  api.HostDeviceSource{Address: hostAddr},
 		Type:    api.HostDevicePCI,
 		Managed: "no",
@@ -170,7 +170,7 @@ func createMultiFunctionPCIHostDevice(PCIDeviceToFunctions map[string][]string, 
 		domainHostAddr := domainHostAddrFunction0.DeepCopy()
 		domainHostAddr.Function = "0x" + function
 		domainHostDevice := &api.HostDevice{
-			Alias:   api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + hostDeviceData.Name + "-function-0x" + function),
+			Alias:   api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + "f" + domainHostAddr.Function + "-" + hostDeviceData.Name),
 			Source:  api.HostDeviceSource{Address: domainHostAddr},
 			Type:    api.HostDevicePCI,
 			Managed: "no",
@@ -206,7 +206,7 @@ func createMDEVHostDeviceWithDisplay(hostDeviceData HostDeviceMetaData, mdevUUID
 
 func createMDEVHostDevice(hostDeviceData HostDeviceMetaData, mdevUUID string) ([]*api.HostDevice, error) {
 	domainHostDevice := &api.HostDevice{
-		Alias: api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + hostDeviceData.Name),
+		Alias: api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + "mdev-" + hostDeviceData.Name),
 		Source: api.HostDeviceSource{
 			Address: &api.Address{
 				UUID: mdevUUID,
