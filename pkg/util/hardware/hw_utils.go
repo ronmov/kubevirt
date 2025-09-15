@@ -21,6 +21,7 @@ package hardware
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ import (
 
 const (
 	PCI_ADDRESS_PATTERN = `^([\da-fA-F]{4}):([\da-fA-F]{2}):([\da-fA-F]{2})\.([0-7]{1})$`
+	PCI_BASE_PATH       = "/sys/bus/pci/devices"
 )
 
 // Parse linux cpuset into an array of ints
@@ -100,17 +102,23 @@ func GetNumberOfVCPUs(cpuSpec *v1.CPU) int64 {
 	return int64(vCPUs)
 }
 
-// ParsePciAddress returns an array of PCI DBSF fields (domain, bus, slot, function)
-func ParsePciAddress(pciAddress string) ([]string, error) {
+type PciAddress struct {
+	Domain   string
+	Bus      string
+	Device   string
+	Function string
+}
+
+func ParsePciAddress(pciAddress string) (PciAddress, error) {
 	pciAddrRegx, err := regexp.Compile(PCI_ADDRESS_PATTERN)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile pci address pattern, %v", err)
+		return PciAddress{}, fmt.Errorf("failed to compile pci address pattern, %v", err)
 	}
 	res := pciAddrRegx.FindStringSubmatch(pciAddress)
 	if len(res) == 0 {
-		return nil, fmt.Errorf("failed to parse pci address %s", pciAddress)
+		return PciAddress{}, fmt.Errorf("failed to parse pci address %s", pciAddress)
 	}
-	return res[1:], nil
+	return PciAddress{res[1], res[2], res[3], res[4]}, nil
 }
 
 func GetDeviceNumaNode(pciAddress string) (*uint32, error) {
@@ -177,4 +185,43 @@ func LookupDeviceVCPUAffinity(pciAddress string, domainSpec *api.DomainSpec) ([]
 		}
 	}
 	return alignedVCPUList, nil
+}
+
+func GetDeviceIdentifier(addr PciAddress) string {
+	return addr.Domain + addr.Bus + addr.Device
+}
+
+type GetPCIDeviceToFunctionsType func() (map[string][]string, error)
+
+func GetPCIDeviceToFunctions() (map[string][]string, error) {
+	pciDeviceToFunctions := make(map[string][]string)
+	err := filepath.Walk(PCI_BASE_PATH, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
+		pciAddress, err := ParsePciAddress(info.Name())
+		if err != nil {
+			return nil
+		}
+
+		// Check if the device is a Virtual Function (VF).
+		// A VF's directory contains a 'physfn' symlink.
+		physfnPath := filepath.Join(path, "physfn")
+		if _, err := os.Stat(physfnPath); err == nil {
+			// This device is a VF, so we skip it.
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			// A stat error other than "file not found" is a real issue.
+			return err
+		}
+
+		deviceID := GetDeviceIdentifier(pciAddress)
+		pciDeviceToFunctions[deviceID] = append(pciDeviceToFunctions[deviceID], pciAddress.Function)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover PCI device functions")
+	}
+	return pciDeviceToFunctions, nil
 }

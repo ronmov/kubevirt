@@ -3180,9 +3180,10 @@ type LogVerbosity struct {
 }
 
 const (
-	PCIResourcePrefix  = "PCI_RESOURCE"
-	MDevResourcePrefix = "MDEV_PCI_RESOURCE"
-	USBResourcePrefix  = "USB_RESOURCE"
+	PCIResourcePrefix              = "PCI_RESOURCE"
+	MultiFunctionPCIResourcePrefix = "MULTIFUNCTION_PCI_RESOURCE"
+	MDevResourcePrefix             = "MDEV_PCI_RESOURCE"
+	USBResourcePrefix              = "USB_RESOURCE"
 )
 
 // PermittedHostDevices holds information about devices allowed for passthrough

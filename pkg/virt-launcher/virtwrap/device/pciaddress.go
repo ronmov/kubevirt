@@ -20,21 +20,37 @@
 package device
 
 import (
+	"fmt"
+
 	hwutil "kubevirt.io/kubevirt/pkg/util/hardware"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 )
 
 func NewPciAddressField(address string) (*api.Address, error) {
-	dbsfFields, err := hwutil.ParsePciAddress(address)
+	pciAddress, err := hwutil.ParsePciAddress(address)
 	if err != nil {
 		return nil, err
 	}
 
 	return &api.Address{
 		Type:     api.AddressPCI,
-		Domain:   "0x" + dbsfFields[0],
-		Bus:      "0x" + dbsfFields[1],
-		Slot:     "0x" + dbsfFields[2],
-		Function: "0x" + dbsfFields[3],
+		Domain:   "0x" + pciAddress.Domain,
+		Bus:      "0x" + pciAddress.Bus,
+		Slot:     "0x" + pciAddress.Device,
+		Function: "0x" + pciAddress.Function,
 	}, nil
+}
+
+func NewPciAddressFieldFromPciAddress(address hwutil.PciAddress) *api.Address {
+	return &api.Address{
+		Type:     api.AddressPCI,
+		Domain:   "0x" + address.Domain,
+		Bus:      "0x" + address.Bus,
+		Slot:     "0x" + address.Device,
+		Function: "0x" + address.Function,
+	}
+}
+
+func LibvirtAddressToPrintableString(address *api.Address) string {
+	return fmt.Sprintf("Libvirt Address: <%s-%s:%s:%s.%s>", address.Type, address.Domain, address.Bus, address.Slot, address.Function)
 }

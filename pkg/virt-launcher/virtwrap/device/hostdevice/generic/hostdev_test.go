@@ -31,6 +31,13 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice/generic"
 )
 
+func fakeGetPCIDeviceToFunctions() (map[string][]string, error) {
+	devices := map[string][]string{
+		"00008101": {"0"},
+	}
+	return devices, nil
+}
+
 var _ = Describe("Generic HostDevice", func() {
 	var vmi *v1.VirtualMachineInstance
 
@@ -55,11 +62,12 @@ var _ = Describe("Generic HostDevice", func() {
 		}
 		pciPool := newAddressPoolStub()
 		pciPool.AddResource(hostdevResource0, hostdevPCIAddress0)
+		multiFunctionPciPool := newAddressPoolStub()
 		mdevPool := newAddressPoolStub()
 		mdevPool.AddResource(hostdevResource1, hostdevPCIAddress1)
 		usbPool := newAddressPoolStub()
 
-		_, err := generic.CreateHostDevicesFromPools(vmi.Spec.Domain.Devices.HostDevices, pciPool, mdevPool, usbPool)
+		_, err := generic.CreateHostDevicesFromPools(vmi.Spec.Domain.Devices.HostDevices, pciPool, multiFunctionPciPool, mdevPool, usbPool, fakeGetPCIDeviceToFunctions)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -70,6 +78,7 @@ var _ = Describe("Generic HostDevice", func() {
 		}
 		pciPool := newAddressPoolStub()
 		pciPool.AddResource(hostdevResource0, hostdevPCIAddress0)
+		multiFunctionPciPool := newAddressPoolStub()
 		mdevPool := newAddressPoolStub()
 		mdevPool.AddResource(hostdevResource1, hostdevMDEVAddress1)
 		usbPool := newAddressPoolStub()
@@ -91,7 +100,7 @@ var _ = Describe("Generic HostDevice", func() {
 			Model:  "vfio-pci",
 		}
 
-		Expect(generic.CreateHostDevicesFromPools(vmi.Spec.Domain.Devices.HostDevices, pciPool, mdevPool, usbPool)).
+		Expect(generic.CreateHostDevicesFromPools(vmi.Spec.Domain.Devices.HostDevices, pciPool, multiFunctionPciPool, mdevPool, usbPool, fakeGetPCIDeviceToFunctions)).
 			To(Equal([]api.HostDevice{expectHostDevice0, expectHostDevice1}))
 	})
 })
