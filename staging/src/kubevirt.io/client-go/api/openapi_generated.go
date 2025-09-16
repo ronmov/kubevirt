@@ -23341,6 +23341,13 @@ func schema_kubevirtio_api_core_v1_PciHostDevice(ref common.ReferenceCallback) c
 							Format:      "",
 						},
 					},
+					"groupFunctions": {
+						SchemaProps: spec.SchemaProps{
+							Description: "If true, all shared functions of a device will be passed to the VM and each device with all of its functions will be treated as a schedulable unit",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 				},
 				Required: []string{"pciVendorSelector", "resourceName"},
 			},

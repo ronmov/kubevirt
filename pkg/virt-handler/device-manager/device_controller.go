@@ -29,6 +29,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8scli "k8s.io/client-go/kubernetes/typed/core/v1"
+	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/client-go/log"
 
@@ -206,21 +207,22 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 	}
 
 	if len(hostDevs.PciHostDevices) != 0 {
-		supportedPCIDeviceMap := make(map[string]string)
+		supportedPCIDeviceMap := make(map[string]v1.PciHostDevice)
 		for _, pciDev := range hostDevs.PciHostDevices {
-			log.Log.V(4).Infof("Permitted PCI device in the cluster, ID: %s, resourceName: %s, externalProvider: %t",
+			log.Log.V(4).Infof("Permitted PCI device in the cluster, ID: %s, resourceName: %s, externalProvider: %t, groupFunctions: %t",
 				strings.ToLower(pciDev.PCIVendorSelector),
 				pciDev.ResourceName,
-				pciDev.ExternalResourceProvider)
+				pciDev.ExternalResourceProvider,
+				pciDev.GroupFunctions)
 			// do not add a device plugin for this resource if it's being provided via an external device plugin
 			if !pciDev.ExternalResourceProvider {
-				supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev.ResourceName
+				supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev
 			}
 		}
-		for pciResourceName, pciDevices := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
-			log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(pciDevices), pciResourceName)
+		for pciResourceName, resources := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
+			log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
 			// add a device plugin only for new devices
-			permittedDevices = append(permittedDevices, NewPCIDevicePlugin(pciDevices, pciResourceName))
+			permittedDevices = append(permittedDevices, NewPCIDevicePlugin(resources, pciResourceName))
 		}
 	}
 	if len(hostDevs.MediatedDevices) != 0 {

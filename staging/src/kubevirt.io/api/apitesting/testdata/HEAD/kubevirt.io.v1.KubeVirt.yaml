@@ -197,6 +197,7 @@ spec:
         resourceName: resourceNameValue
       pciHostDevices:
       - externalResourceProvider: true
+        groupFunctions: true
         pciVendorSelector: pciVendorSelectorValue
         resourceName: resourceNameValue
       usb:

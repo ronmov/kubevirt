@@ -40,9 +40,10 @@ import (
 )
 
 const (
-	vfioDevicePath = "/dev/vfio/"
-	vfioMount      = "/dev/vfio/vfio"
-	pciBasePath    = "/sys/bus/pci/devices"
+	vfioDevicePath    = "/dev/vfio/"
+	vfioMount         = "/dev/vfio/vfio"
+	pciBasePath       = "/sys/bus/pci/devices"
+	vfioPciDriverName = "vfio-pci"
 )
 
 type PCIDevice struct {
@@ -55,7 +56,13 @@ type PCIDevice struct {
 
 type PCIDevicePlugin struct {
 	*DevicePluginBase
-	iommuToPCIMap map[string]string
+	iommuToPCIMap  map[string]string
+	GroupFunctions bool
+}
+
+type PciResourceDescriptor struct {
+	devices        []*PCIDevice
+	GroupFunctions bool
 }
 
 func (dpi *PCIDevicePlugin) Start(stop <-chan struct{}) (err error) {
@@ -104,11 +111,11 @@ func (dpi *PCIDevicePlugin) Start(stop <-chan struct{}) (err error) {
 	return err
 }
 
-func NewPCIDevicePlugin(pciDevices []*PCIDevice, resourceName string) *PCIDevicePlugin {
+func NewPCIDevicePlugin(resources PciResourceDescriptor, resourceName string) *PCIDevicePlugin {
 	serverSock := SocketPath(strings.Replace(resourceName, "/", "-", -1))
 	iommuToPCIMap := make(map[string]string)
 
-	devs := constructDPIdevices(pciDevices, iommuToPCIMap)
+	devs := constructDPIdevices(resources.devices, iommuToPCIMap)
 
 	dpi := &PCIDevicePlugin{
 		DevicePluginBase: &DevicePluginBase{
@@ -123,7 +130,8 @@ func NewPCIDevicePlugin(pciDevices []*PCIDevice, resourceName string) *PCIDevice
 			done:         make(chan struct{}),
 			deregistered: make(chan struct{}),
 		},
-		iommuToPCIMap: iommuToPCIMap,
+		iommuToPCIMap:  iommuToPCIMap,
+		GroupFunctions: resources.GroupFunctions,
 	}
 	return dpi
 }
@@ -149,7 +157,12 @@ func constructDPIdevices(pciDevices []*PCIDevice, iommuToPCIMap map[string]strin
 }
 
 func (dpi *PCIDevicePlugin) Allocate(_ context.Context, r *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
-	resourceNameEnvVar := util.ResourceNameToEnvVar(v1.PCIResourcePrefix, dpi.resourceName)
+	var resourceNameEnvVar string
+	if dpi.GroupFunctions {
+		resourceNameEnvVar = util.ResourceNameToEnvVar(v1.MultiFunctionPCIResourcePrefix, dpi.resourceName)
+	} else {
+		resourceNameEnvVar = util.ResourceNameToEnvVar(v1.PCIResourcePrefix, dpi.resourceName)
+	}
 	allocatedDevices := []string{}
 	resp := new(pluginapi.AllocateResponse)
 	containerResponse := new(pluginapi.ContainerAllocateResponse)
@@ -253,36 +266,114 @@ func (dpi *PCIDevicePlugin) healthCheck() error {
 	}
 }
 
-func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string) map[string][]*PCIDevice {
-	pciDevicesMap := make(map[string][]*PCIDevice)
-	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
+func isDeviceBoundToVfio(address string) (bool, error) {
+	driver, err := handler.GetDeviceDriver(pciBasePath, address)
+	if err != nil {
+		return false, err
+	}
+	return driver == vfioPciDriverName, nil
+}
+
+func handleSingleFunctionDeviceDiscovery(pciID, address, driver string) (*PCIDevice, error) {
+	log.DefaultLogger().Infof("registering device: %s", address)
+
+	iommuGroup, err := handler.GetDeviceIOMMUGroup(pciBasePath, address)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PCIDevice{
+		pciID:      pciID,
+		pciAddress: address,
+		iommuGroup: iommuGroup,
+		driver:     driver,
+		numaNode:   handler.GetDeviceNumaNode(pciBasePath, address),
+	}, nil
+}
+
+func handleMultiFunctionDeviceDiscovery(pciID, address, driver, baseResourceName string) (*PCIDevice, string, error) {
+	device, err := handleSingleFunctionDeviceDiscovery(pciID, address, driver)
+	if err != nil {
+		return nil, "", err
+	}
+
+	functionCount := 1
+	baseAddress := strings.TrimSuffix(address, ".0")
+
+	err = filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasPrefix(info.Name(), baseAddress) || info.Name() == address {
 			return nil
 		}
+
+		// skip Virtual Functions (VFs)
+		physfnPath := filepath.Join(path, "physfn")
+		if _, err := os.Stat(physfnPath); err == nil {
+			return nil // VF detected
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err // Unexpected stat error
+		}
+
+		isBound, err := isDeviceBoundToVfio(info.Name())
+		if err != nil {
+			return err
+		}
+		if !isBound {
+			return fmt.Errorf("device %s not bound to vfio-pci", info.Name())
+		}
+
+		functionCount++
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	resourceName := fmt.Sprintf("%s_%dF", baseResourceName, functionCount)
+	return device, resourceName, nil
+}
+
+func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]v1.PciHostDevice) map[string]PciResourceDescriptor {
+	pciDevicesMap := make(map[string]PciResourceDescriptor)
+
+	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+
 		pciID, err := handler.GetDevicePCIID(pciBasePath, info.Name())
 		if err != nil {
-			log.DefaultLogger().Reason(err).Errorf("failed get vendor:device ID for device: %s", info.Name())
+			log.DefaultLogger().Reason(err).Errorf("failed to get PCI ID for device: %s", info.Name())
 			return nil
 		}
-		if resourceName, supported := supportedPCIDeviceMap[pciID]; supported {
-			// check device driver
+		if pciDev, supported := supportedPCIDeviceMap[pciID]; supported {
 			driver, err := handler.GetDeviceDriver(pciBasePath, info.Name())
-			if err != nil || driver != "vfio-pci" {
+			if err != nil {
+				log.DefaultLogger().Reason(err).Errorf("failed to get driver for device: %s", info.Name())
 				return nil
 			}
 
-			pcidev := &PCIDevice{
-				pciID:      pciID,
-				pciAddress: info.Name(),
+			if driver != vfioPciDriverName {
+				return nil // skip devices that are not bound to VFIO
 			}
-			iommuGroup, err := handler.GetDeviceIOMMUGroup(pciBasePath, info.Name())
-			if err != nil {
+
+			var device *PCIDevice
+			resourceName := pciDev.ResourceName
+
+			if !pciDev.GroupFunctions {
+				device, err = handleSingleFunctionDeviceDiscovery(pciID, info.Name(), driver)
+			} else if pciDev.GroupFunctions && strings.HasSuffix(info.Name(), ".0") {
+				device, resourceName, err = handleMultiFunctionDeviceDiscovery(pciID, info.Name(), driver, resourceName)
+			} else {
 				return nil
 			}
-			pcidev.iommuGroup = iommuGroup
-			pcidev.driver = driver
-			pcidev.numaNode = handler.GetDeviceNumaNode(pciBasePath, info.Name())
-			pciDevicesMap[resourceName] = append(pciDevicesMap[resourceName], pcidev)
+			if err != nil {
+				log.DefaultLogger().Reason(err).Errorf("failed to discover device: %s, error: %v", info.Name(), err)
+				return nil
+			}
+
+			desc := pciDevicesMap[resourceName]
+			desc.devices = append(desc.devices, device)
+			desc.GroupFunctions = pciDev.GroupFunctions
+			pciDevicesMap[resourceName] = desc
 		}
 		return nil
 	})

@@ -3223,6 +3223,9 @@ type PciHostDevice struct {
 	// If true, KubeVirt will leave the allocation and monitoring to an
 	// external device plugin
 	ExternalResourceProvider bool `json:"externalResourceProvider,omitempty"`
+	// If true, all shared functions of a device will be passed to the VM
+	// and each device with all of its functions will be treated as a schedulable unit
+	GroupFunctions bool `json:"groupFunctions,omitempty"`
 }
 
 // MediatedHostDevice represents a host mediated device allowed for passthrough
