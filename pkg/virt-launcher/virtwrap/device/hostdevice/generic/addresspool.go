@@ -20,6 +20,8 @@
 package generic
 
 import (
+	"fmt"
+
 	v1 "kubevirt.io/api/core/v1"
 
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice"
@@ -52,7 +54,11 @@ func NewUSBAddressPool(hostDevices []v1.HostDevice) *hostdevice.AddressPool {
 func extractResources(hostDevices []v1.HostDevice) []string {
 	var resourceSet = make(map[string]struct{})
 	for _, hostDevice := range hostDevices {
-		resourceSet[hostDevice.DeviceName] = struct{}{}
+		resourceName := hostDevice.DeviceName
+		if hostDevice.DesiredFunctionCount != 0 {
+			resourceName = fmt.Sprintf("%s_%dF", resourceName, hostDevice.DesiredFunctionCount)
+		}
+		resourceSet[resourceName] = struct{}{}
 	}
 
 	var resources []string

@@ -184,7 +184,11 @@ func WithHostDevicesDevicePlugins(hostDevices []v1.HostDevice) ResourceRendererO
 		resources := r.ResourceRequirements()
 		for _, hd := range hostDevices {
 			if hd.DeviceName != "" && hd.ClaimRequest == nil {
-				requestResource(&resources, hd.DeviceName)
+				if hd.DesiredFunctionCount == 0 {
+					requestResource(&resources, hd.DeviceName)
+				} else {
+					requestResource(&resources, fmt.Sprintf("%s_%dF", hd.DeviceName, hd.DesiredFunctionCount))
+				}
 			}
 		}
 		copyResources(resources.Limits, r.calculatedLimits)

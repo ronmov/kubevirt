@@ -33,7 +33,7 @@ import (
 
 func fakeGetPCIDeviceToFunctions() (map[string][]string, error) {
 	devices := map[string][]string{
-		"00008101": {"0"},
+		"00008200": {"0", "1"},
 	}
 	return devices, nil
 }
@@ -71,14 +71,16 @@ var _ = Describe("Generic HostDevice", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("creates two devices, PCI and MDEV", func() {
+	It("creates three devices, PCI, multi-function PCI and MDEV", func() {
 		vmi.Spec.Domain.Devices.HostDevices = []v1.HostDevice{
 			{DeviceName: hostdevResource0, Name: hostdevName0},
 			{DeviceName: hostdevResource1, Name: hostdevName1},
+			{DeviceName: hostdevResource2, Name: hostdevName2, DesiredFunctionCount: 2},
 		}
 		pciPool := newAddressPoolStub()
 		pciPool.AddResource(hostdevResource0, hostdevPCIAddress0)
 		multiFunctionPciPool := newAddressPoolStub()
+		multiFunctionPciPool.AddResource(hostdevResource2+"_2F", hostdevPCIAddress2Function0)
 		mdevPool := newAddressPoolStub()
 		mdevPool.AddResource(hostdevResource1, hostdevMDEVAddress1)
 		usbPool := newAddressPoolStub()
@@ -87,6 +89,22 @@ var _ = Describe("Generic HostDevice", func() {
 		expectHostDevice0 := api.HostDevice{
 			Alias:   api.NewUserDefinedAlias(generic.AliasPrefix + hostdevName0),
 			Source:  api.HostDeviceSource{Address: &hostPCIAddress},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+
+		multifunctionhostPCIAddress0 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x82", Slot: "0x00", Function: "0x0"}
+		expectMultifunctionHostDevice0 := api.HostDevice{
+			Alias:   api.NewUserDefinedAlias(generic.AliasPrefix + hostdevName2 + "-function-0x0"),
+			Source:  api.HostDeviceSource{Address: &multifunctionhostPCIAddress0},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+
+		multifunctionhostPCIAddress1 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x82", Slot: "0x00", Function: "0x1"}
+		expectMultifunctionHostDevice1 := api.HostDevice{
+			Alias:   api.NewUserDefinedAlias(generic.AliasPrefix + hostdevName2 + "-function-0x1"),
+			Source:  api.HostDeviceSource{Address: &multifunctionhostPCIAddress1},
 			Type:    api.HostDevicePCI,
 			Managed: "no",
 		}
@@ -101,7 +119,7 @@ var _ = Describe("Generic HostDevice", func() {
 		}
 
 		Expect(generic.CreateHostDevicesFromPools(vmi.Spec.Domain.Devices.HostDevices, pciPool, multiFunctionPciPool, mdevPool, usbPool, fakeGetPCIDeviceToFunctions)).
-			To(Equal([]api.HostDevice{expectHostDevice0, expectHostDevice1}))
+			To(Equal([]api.HostDevice{expectHostDevice0, expectMultifunctionHostDevice0, expectMultifunctionHostDevice1, expectHostDevice1}))
 	})
 })
 

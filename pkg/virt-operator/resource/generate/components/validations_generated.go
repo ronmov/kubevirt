@@ -6261,6 +6261,15 @@ var CRDsValidation map[string]string = map[string]string{
                                   ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                                   device is allocated
                                 type: string
+                              desiredFunctionCount:
+                                default: 0
+                                description: |-
+                                  If the given resource is being handled by a multifunction device plugin
+                                  the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                                  The device will be selected from a pool of devices with exactly this amount of functions.
+                                maximum: 7
+                                minimum: 0
+                                type: integer
                               deviceName:
                                 description: DeviceName is the name of the device
                                   provisioned by device-plugins
@@ -9085,6 +9094,15 @@ var CRDsValidation map[string]string = map[string]string{
                   ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                   device is allocated
                 type: string
+              desiredFunctionCount:
+                default: 0
+                description: |-
+                  If the given resource is being handled by a multifunction device plugin
+                  the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                  The device will be selected from a pool of devices with exactly this amount of functions.
+                maximum: 7
+                minimum: 0
+                type: integer
               deviceName:
                 description: DeviceName is the name of the device provisioned by device-plugins
                 type: string
@@ -11712,6 +11730,15 @@ var CRDsValidation map[string]string = map[string]string{
                           ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                           device is allocated
                         type: string
+                      desiredFunctionCount:
+                        default: 0
+                        description: |-
+                          If the given resource is being handled by a multifunction device plugin
+                          the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                          The device will be selected from a pool of devices with exactly this amount of functions.
+                        maximum: 7
+                        minimum: 0
+                        type: integer
                       deviceName:
                         description: DeviceName is the name of the device provisioned
                           by device-plugins
@@ -15411,6 +15438,15 @@ var CRDsValidation map[string]string = map[string]string{
                           ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                           device is allocated
                         type: string
+                      desiredFunctionCount:
+                        default: 0
+                        description: |-
+                          If the given resource is being handled by a multifunction device plugin
+                          the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                          The device will be selected from a pool of devices with exactly this amount of functions.
+                        maximum: 7
+                        minimum: 0
+                        type: integer
                       deviceName:
                         description: DeviceName is the name of the device provisioned
                           by device-plugins
@@ -17897,6 +17933,15 @@ var CRDsValidation map[string]string = map[string]string{
                                   ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                                   device is allocated
                                 type: string
+                              desiredFunctionCount:
+                                default: 0
+                                description: |-
+                                  If the given resource is being handled by a multifunction device plugin
+                                  the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                                  The device will be selected from a pool of devices with exactly this amount of functions.
+                                maximum: 7
+                                minimum: 0
+                                type: integer
                               deviceName:
                                 description: DeviceName is the name of the device
                                   provisioned by device-plugins
@@ -19989,6 +20034,15 @@ var CRDsValidation map[string]string = map[string]string{
                   ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                   device is allocated
                 type: string
+              desiredFunctionCount:
+                default: 0
+                description: |-
+                  If the given resource is being handled by a multifunction device plugin
+                  the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                  The device will be selected from a pool of devices with exactly this amount of functions.
+                maximum: 7
+                minimum: 0
+                type: integer
               deviceName:
                 description: DeviceName is the name of the device provisioned by device-plugins
                 type: string
@@ -22567,6 +22621,15 @@ var CRDsValidation map[string]string = map[string]string{
                                           ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                                           device is allocated
                                         type: string
+                                      desiredFunctionCount:
+                                        default: 0
+                                        description: |-
+                                          If the given resource is being handled by a multifunction device plugin
+                                          the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                                          The device will be selected from a pool of devices with exactly this amount of functions.
+                                        maximum: 7
+                                        minimum: 0
+                                        type: integer
                                       deviceName:
                                         description: DeviceName is the name of the
                                           device provisioned by device-plugins
@@ -27927,6 +27990,15 @@ var CRDsValidation map[string]string = map[string]string{
                                               ClaimName needs to be provided from the list vmi.spec.resourceClaims[].name where this
                                               device is allocated
                                             type: string
+                                          desiredFunctionCount:
+                                            default: 0
+                                            description: |-
+                                              If the given resource is being handled by a multifunction device plugin
+                                              the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+                                              The device will be selected from a pool of devices with exactly this amount of functions.
+                                            maximum: 7
+                                            minimum: 0
+                                            type: integer
                                           deviceName:
                                             description: DeviceName is the name of
                                               the device provisioned by device-plugins

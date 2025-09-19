@@ -359,8 +359,9 @@ func (PanicDevice) SwaggerDoc() map[string]string {
 
 func (HostDevice) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"deviceName": "DeviceName is the name of the device provisioned by device-plugins",
-		"tag":        "If specified, the virtual network interface address and its tag will be provided to the guest via config drive\n+optional",
+		"deviceName":           "DeviceName is the name of the device provisioned by device-plugins",
+		"tag":                  "If specified, the virtual network interface address and its tag will be provided to the guest via config drive\n+optional",
+		"desiredFunctionCount": "If the given resource is being handled by a multifunction device plugin\nthe user must provide the number of functions to pass-through to the vm otherwise this must be 0.\nThe device will be selected from a pool of devices with exactly this amount of functions.\n+optional\n+kubebuilder:default=0\n+kubebuilder:validation:Minimum=0\n+kubebuilder:validation:Maximum=7",
 	}
 }
 

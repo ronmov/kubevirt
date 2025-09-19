@@ -83,10 +83,14 @@ func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, 
 func createHostDevicesMetadata(vmiHostDevices []v1.HostDevice) []hostdevice.HostDeviceMetaData {
 	var hostDevicesMetaData []hostdevice.HostDeviceMetaData
 	for _, dev := range vmiHostDevices {
+		resourceName := dev.DeviceName
+		if dev.DesiredFunctionCount != 0 {
+			resourceName = fmt.Sprintf("%s_%dF", resourceName, dev.DesiredFunctionCount)
+		}
 		hostDevicesMetaData = append(hostDevicesMetaData, hostdevice.HostDeviceMetaData{
 			AliasPrefix:  AliasPrefix,
 			Name:         dev.Name,
-			ResourceName: dev.DeviceName,
+			ResourceName: resourceName,
 		})
 	}
 	return hostDevicesMetaData
@@ -97,15 +101,20 @@ func createHostDevicesMetadata(vmiHostDevices []v1.HostDevice) []hostdevice.Host
 // The validation assumes that the assignment of a device to a specified generic host-device is correct,
 // therefore a simple quantity check is sufficient.
 func validateCreationOfDevicePluginsDevices(genericHostDevices []v1.HostDevice, hostDevices []api.HostDevice) error {
-	hostDevsWithDP := []v1.HostDevice{}
+	expectedDevicesCount := 0
 	for _, hd := range genericHostDevices {
-		if !drautil.IsHostDeviceDRA(hd) {
-			hostDevsWithDP = append(hostDevsWithDP, hd)
+		if drautil.IsHostDeviceDRA(hd) {
+			continue
+		}
+		if hd.DesiredFunctionCount == 0 {
+			expectedDevicesCount++
+		} else {
+			expectedDevicesCount += hd.DesiredFunctionCount
 		}
 	}
 
-	if len(hostDevsWithDP) > 0 && len(hostDevsWithDP) != len(hostDevices) {
-		return fmt.Errorf("the number of device plugin HostDevice/s do not match the number of devices:\nHostDevice: %v\nDevice: %v", hostDevsWithDP, hostDevices)
+	if expectedDevicesCount > 0 && expectedDevicesCount != len(hostDevices) {
+		return fmt.Errorf("the number of device plugin HostDevice/s do not match the number of devices:\nHostDeviceCount: %d\nDevices: %v", expectedDevicesCount, hostDevices)
 	}
 	return nil
 }
