@@ -20643,6 +20643,13 @@ func schema_kubevirtio_api_core_v1_HostDevice(ref common.ReferenceCallback) comm
 							Format:      "",
 						},
 					},
+					"desiredFunctionCount": {
+						SchemaProps: spec.SchemaProps{
+							Description: "If the given resource is being handled by a multifunction device plugin the user must provide the number of functions to pass-through to the vm otherwise this must be 0. The device will be selected from a pool of devices with exactly this amount of functions.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
 				},
 				Required: []string{"name"},
 			},

@@ -679,6 +679,14 @@ type HostDevice struct {
 	// If specified, the virtual network interface address and its tag will be provided to the guest via config drive
 	// +optional
 	Tag string `json:"tag,omitempty"`
+	// If the given resource is being handled by a multifunction device plugin
+	// the user must provide the number of functions to pass-through to the vm otherwise this must be 0.
+	// The device will be selected from a pool of devices with exactly this amount of functions.
+	// +optional
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=7
+	DesiredFunctionCount int `json:"desiredFunctionCount,omitempty"`
 }
 
 type Disk struct {

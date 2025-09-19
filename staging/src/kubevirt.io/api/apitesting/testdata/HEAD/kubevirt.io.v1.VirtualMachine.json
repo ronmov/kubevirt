@@ -412,7 +412,8 @@
                 "deviceName": "deviceNameValue",
                 "claimName": "claimNameValue",
                 "requestName": "requestNameValue",
-                "tag": "tagValue"
+                "tag": "tagValue",
+                "desiredFunctionCount": -20
               }
             ],
             "clientPassthrough": {},

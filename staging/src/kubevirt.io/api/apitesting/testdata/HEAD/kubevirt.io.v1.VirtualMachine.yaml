@@ -478,6 +478,7 @@ spec:
                   enabled: true
           hostDevices:
           - claimName: claimNameValue
+            desiredFunctionCount: -20
             deviceName: deviceNameValue
             name: nameValue
             requestName: requestNameValue
