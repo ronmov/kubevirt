@@ -41,7 +41,9 @@ type HostDeviceMetaData struct {
 	VirtualGPUOptions *v1.VGPUOptions
 	// DecorateHook is a function pointer that may be used to mutate the domain host-device
 	// with additional specific parameters. E.g. guest PCI address.
-	DecorateHook func(hostDevice *api.HostDevice) error
+	DecorateHook    func(hostDevice *api.HostDevice) error
+	FunctionCount   int
+	IsHostDeviceDRA bool
 }
 
 type createHostDevice func(HostDeviceMetaData, string) ([]*api.HostDevice, error)

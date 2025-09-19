@@ -21,10 +21,13 @@ package generic
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	v1 "kubevirt.io/api/core/v1"
 
 	drautil "kubevirt.io/kubevirt/pkg/dra"
+	"kubevirt.io/kubevirt/pkg/util"
 	hwutil "kubevirt.io/kubevirt/pkg/util/hardware"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device/hostdevice"
@@ -47,7 +50,11 @@ func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, 
 	mdevPool := hostdevice.NewBestEffortAddressPool(mdevAddressPool)
 	usbPool := hostdevice.NewBestEffortAddressPool(usbAddressPool)
 
-	hostDevicesMetaData := createHostDevicesMetadata(vmiHostDevices)
+	hostDevicesMetaData, err := createHostDevicesMetadata(vmiHostDevices)
+	if err != nil {
+		return nil, err
+	}
+
 	pciHostDevices, err := hostdevice.CreatePCIHostDevices(hostDevicesMetaData, pciPool)
 	if err != nil {
 		return nil, fmt.Errorf(failedCreateGenericHostDevicesFmt, err)
@@ -73,39 +80,53 @@ func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, 
 
 	hostDevices = append(hostDevices, usbHostDevices...)
 
-	if err := validateCreationOfDevicePluginsDevices(vmiHostDevices, hostDevices); err != nil {
+	if err := validateCreationOfDevicePluginsDevices(hostDevicesMetaData, hostDevices); err != nil {
 		return nil, fmt.Errorf(failedCreateGenericHostDevicesFmt, err)
 	}
 
 	return hostDevices, nil
 }
 
-func createHostDevicesMetadata(vmiHostDevices []v1.HostDevice) []hostdevice.HostDeviceMetaData {
+func createHostDevicesMetadata(vmiHostDevices []v1.HostDevice) ([]hostdevice.HostDeviceMetaData, error) {
 	var hostDevicesMetaData []hostdevice.HostDeviceMetaData
 	for _, dev := range vmiHostDevices {
+		functionCountInt := 1
+		functionCountEnvVarName := util.ResourceNameToEnvVar(v1.MultiFunctionCountPCIResourcePrefix, dev.DeviceName)
+		functionCountString, isSet := os.LookupEnv(functionCountEnvVarName)
+		if isSet {
+			var err error
+			functionCountInt, err = strconv.Atoi(functionCountString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert %s to a number (resource: %s env var name: %s)", functionCountString, dev.DeviceName, functionCountEnvVarName)
+			}
+		}
+
 		hostDevicesMetaData = append(hostDevicesMetaData, hostdevice.HostDeviceMetaData{
-			AliasPrefix:  AliasPrefix,
-			Name:         dev.Name,
-			ResourceName: dev.DeviceName,
+			AliasPrefix:     AliasPrefix,
+			Name:            dev.Name,
+			ResourceName:    dev.DeviceName,
+			FunctionCount:   functionCountInt,
+			IsHostDeviceDRA: drautil.IsHostDeviceDRA(dev),
 		})
 	}
-	return hostDevicesMetaData
+	return hostDevicesMetaData, nil
 }
 
 // validateCreationOfDevicePluginsDevices validates that all specified generic host-devices have a matching host-device.
 // On validation failure, an error is returned.
 // The validation assumes that the assignment of a device to a specified generic host-device is correct,
 // therefore a simple quantity check is sufficient.
-func validateCreationOfDevicePluginsDevices(genericHostDevices []v1.HostDevice, hostDevices []api.HostDevice) error {
-	hostDevsWithDP := []v1.HostDevice{}
-	for _, hd := range genericHostDevices {
-		if !drautil.IsHostDeviceDRA(hd) {
-			hostDevsWithDP = append(hostDevsWithDP, hd)
+func validateCreationOfDevicePluginsDevices(hostDevicesMetaData []hostdevice.HostDeviceMetaData, hostDevices []api.HostDevice) error {
+	expectedDevicesCount := 0
+	for _, hd := range hostDevicesMetaData {
+		if hd.IsHostDeviceDRA {
+			continue
 		}
+		expectedDevicesCount += hd.FunctionCount
 	}
 
-	if len(hostDevsWithDP) > 0 && len(hostDevsWithDP) != len(hostDevices) {
-		return fmt.Errorf("the number of device plugin HostDevice/s do not match the number of devices:\nHostDevice: %v\nDevice: %v", hostDevsWithDP, hostDevices)
+	if expectedDevicesCount > 0 && expectedDevicesCount != len(hostDevices) {
+		return fmt.Errorf("the number of device plugin HostDevice/s do not match the number of devices:\nHostDeviceCount: %d\nDevices: %v", expectedDevicesCount, hostDevices)
 	}
 	return nil
 }

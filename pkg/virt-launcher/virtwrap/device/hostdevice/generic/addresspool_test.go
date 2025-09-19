@@ -38,16 +38,30 @@ type envData struct {
 }
 
 const (
+	//
+	// This test suite simulates an environment with these host devices:
+	// 0000:81:01.0 - single-function PCI           (hostdevName0)
+	// 0000:81:01.1 - mdev                          (hostdevName1)
+	// 0000:82:00.0 - multi-function PCI function 0 (hostdevName2)
+	// 0000:82:00.1 - multi-function PCI function 1 (hostdevName2)
+	//
+
 	hostdevName0 = "hostdev_name0"
 	hostdevName1 = "hostdev_name1"
+	hostdevName2 = "hostdev_name2"
 
 	hostdevResource0    = "vendor.com/hostdev_name0"
 	hostdevResource1    = "vendor.com/hostdev_name1"
+	hostdevResource2    = "vendor.com/hostdev_name2"
 	envHostDevResource0 = "VENDOR_COM_HOSTDEV_NAME0"
 	envHostDevResource1 = "VENDOR_COM_HOSTDEV_NAME1"
+	envHostDevResource2 = "VENDOR_COM_HOSTDEV_NAME2"
 
-	hostdevPCIAddress0 = "0000:81:01.0"
-	hostdevPCIAddress1 = "0000:81:01.1"
+	hostdevPCIAddress0          = "0000:81:01.0"
+	hostdevPCIAddress1          = "0000:81:01.1"
+	hostdevPCIAddress2Function0 = "0000:82:00.0"
+
+	multiFunctionDeviceFunctionCountStr = "2"
 
 	hostdevMDEVAddress0 = "123456789-0"
 	hostdevMDEVAddress1 = "123456789-1"
@@ -67,6 +81,7 @@ var _ = Describe("Generic Address Pool", func() {
 		},
 		Entry("PCI", generic.NewPCIAddressPool),
 		Entry("MDEV", generic.NewMDEVAddressPool),
+		Entry("MULTI_FUNCTION_PCI", generic.NewMultiFunctionPCIAddressPool),
 	)
 
 	DescribeTable("creates an empty pool when no resources are specified",
@@ -77,6 +92,7 @@ var _ = Describe("Generic Address Pool", func() {
 		},
 		Entry("PCI", generic.NewPCIAddressPool),
 		Entry("MDEV", generic.NewMDEVAddressPool),
+		Entry("MULTI_FUNCTION_PCI", generic.NewMultiFunctionPCIAddressPool),
 	)
 
 	DescribeTable("succeeds to pop 2 addresses from same resource",
@@ -91,6 +107,7 @@ var _ = Describe("Generic Address Pool", func() {
 		},
 		Entry("PCI", generic.NewPCIAddressPool, v1.PCIResourcePrefix, hostdevPCIAddress0, hostdevPCIAddress1),
 		Entry("MDEV", generic.NewMDEVAddressPool, v1.MDevResourcePrefix, hostdevMDEVAddress0, hostdevMDEVAddress1),
+		Entry("MULTI_FUNCTION_PCI", generic.NewMultiFunctionPCIAddressPool, v1.MultiFunctionPCIResourcePrefix, hostdevPCIAddress0, hostdevPCIAddress2Function0),
 	)
 
 	DescribeTable("succeeds to pop 2 addresses from two resources",
@@ -111,6 +128,7 @@ var _ = Describe("Generic Address Pool", func() {
 		},
 		Entry("PCI", generic.NewPCIAddressPool, v1.PCIResourcePrefix, hostdevPCIAddress0, hostdevPCIAddress1),
 		Entry("MDEV", generic.NewMDEVAddressPool, v1.MDevResourcePrefix, hostdevMDEVAddress0, hostdevMDEVAddress1),
+		Entry("MULTI_FUNCTION_PCI", generic.NewMultiFunctionPCIAddressPool, v1.MultiFunctionPCIResourcePrefix, hostdevPCIAddress0, hostdevPCIAddress2Function0),
 	)
 })
 
