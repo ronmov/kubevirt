@@ -1048,6 +1048,7 @@ func (PciHostDevice) SwaggerDoc() map[string]string {
 		"pciVendorSelector":        "The vendor_id:product_id tuple of the PCI device",
 		"resourceName":             "The name of the resource that is representing the device. Exposed by\na device plugin and requested by VMs. Typically of the form\nvendor.com/product_name",
 		"externalResourceProvider": "If true, KubeVirt will leave the allocation and monitoring to an\nexternal device plugin",
+		"numberOfFunctions":        "If this resource should be treated as a single-function resource, this value must be 0.\nIf this resource should be treated as a multi-function resource, specify the number of functions this PCI device exposes.\nWhen managing a multi-function resource KubeVirt will treat all functions as a single schedulable unit.\nDuring the VM creation this number of functions will be passed to the VM - thus passing the entire multi-function device.\n+optional\n+kubebuilder:default=0\n+kubebuilder:validation:Minimum=0\n+kubebuilder:validation:Maximum=7",
 	}
 }
 
