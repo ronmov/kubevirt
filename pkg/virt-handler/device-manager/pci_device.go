@@ -47,6 +47,8 @@ const (
 	vfioPciDriverName = "vfio-pci"
 )
 
+var MockableWalk = filepath.Walk
+
 type PCIDevice struct {
 	pciID      string
 	driver     string
@@ -369,17 +371,17 @@ func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResour
 	functionCount := 1
 	baseAddress := strings.TrimSuffix(address, ".0")
 
-	err = filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+	err = MockableWalk(pciBasePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasPrefix(info.Name(), baseAddress) || info.Name() == address {
 			return nil
 		}
 
-		// skip Virtual Functions (VFs)
-		physfnPath := filepath.Join(path, "physfn")
-		if _, err := os.Stat(physfnPath); err == nil {
-			return nil // VF detected
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err // Unexpected stat error
+		isDeviceVirtualFunction, err := handler.IsDeviceVirtualFunction(pciBasePath, info.Name())
+		if err != nil {
+			return err
+		}
+		if isDeviceVirtualFunction {
+			return nil
 		}
 
 		isBound, err := isDeviceBoundToVfio(info.Name())
@@ -409,7 +411,7 @@ func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResour
 func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]PciResourceDiscoveryDescriptor) map[string]PciResourceDescriptor {
 	pciDevicesMap := make(map[string]PciResourceDescriptor)
 
-	err := filepath.Walk(pciBasePath, func(path string, info os.FileInfo, err error) error {
+	err := MockableWalk(pciBasePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
