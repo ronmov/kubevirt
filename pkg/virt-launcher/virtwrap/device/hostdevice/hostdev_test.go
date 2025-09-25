@@ -44,14 +44,30 @@ const (
 	devName1 = "test_device1"
 )
 
+func createFakeCreateMultiFunctionPCIHostDevices(PCIDeviceToFunctions map[string][]string) createHostDevices {
+	GetPCIDeviceToFunctions := func() (map[string][]string, error) {
+		return PCIDeviceToFunctions, nil
+	}
+	fakeCreateMultiFunctionPCIHostDevice := func(innerHostDevicesData []hostdevice.HostDeviceMetaData, innerPool hostdevice.AddressPooler) ([]api.HostDevice, error) {
+		return hostdevice.CreateMultiFunctionPCIHostDevices(innerHostDevicesData, innerPool, GetPCIDeviceToFunctions)
+	}
+	return fakeCreateMultiFunctionPCIHostDevice
+}
+
 var _ = Describe("HostDevice", func() {
 
 	createMDEVWithoutDisplay := func(hostDevicesMetaData []hostdevice.HostDeviceMetaData, pool hostdevice.AddressPooler) ([]api.HostDevice, error) {
 		return hostdevice.CreateMDEVHostDevices(hostDevicesMetaData, pool, false)
 	}
+	getPCIDeviceToFunctionsEmptyReturnValue := func() (map[string][]string, error) {
+		return map[string][]string{}, nil
+	}
+	createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree := createFakeCreateMultiFunctionPCIHostDevices(map[string][]string{"00008101": {"0"}, "00008201": {"0"}})
+	createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree := createFakeCreateMultiFunctionPCIHostDevices(map[string][]string{"00008101": {"0", "1"}, "00008201": {"0", "1"}})
 
 	It("creates no device given no devices-metadata", func() {
 		Expect(hostdevice.CreatePCIHostDevices(nil, newAddressPoolStub())).To(BeEmpty())
+		Expect(hostdevice.CreateMultiFunctionPCIHostDevices(nil, newAddressPoolStub(), getPCIDeviceToFunctionsEmptyReturnValue)).To(BeEmpty())
 		Expect(hostdevice.CreateMDEVHostDevices(nil, newAddressPoolStub(), false)).To(BeEmpty())
 	})
 
@@ -69,6 +85,8 @@ var _ = Describe("HostDevice", func() {
 			Expect(err).To(HaveOccurred())
 		},
 		Entry("PCI", hostdevice.CreatePCIHostDevices),
+		Entry("SINGLE_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree),
+		Entry("MULTI_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree),
 		Entry("MDEV", createMDEVWithoutDisplay),
 	)
 
@@ -93,6 +111,8 @@ var _ = Describe("HostDevice", func() {
 			Expect(err).To(HaveOccurred())
 		},
 		Entry("PCI", hostdevice.CreatePCIHostDevices),
+		Entry("SINGLE_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree),
+		Entry("MULTI_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree),
 		Entry("MDEV", createMDEVWithoutDisplay),
 	)
 
@@ -106,6 +126,8 @@ var _ = Describe("HostDevice", func() {
 			Expect(err).To(HaveOccurred())
 		},
 		Entry("PCI", hostdevice.CreatePCIHostDevices),
+		Entry("SINGLE_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree),
+		Entry("MULTI_FUNCTION_PCI", createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree),
 		Entry("MDEV", createMDEVWithoutDisplay),
 	)
 
@@ -150,6 +172,90 @@ var _ = Describe("HostDevice", func() {
 			hostDevices, err := hostdevice.CreatePCIHostDevices(hostDevicesMetaData, pool)
 
 			Expect(hostDevices, err).To(Equal([]api.HostDevice{expectHostDevice1, expectHostDevice2}))
+		})
+	})
+
+	Context("MULTIFUNCTION_PCI", func() {
+		const pciAddress0 = "0000:81:01.0"
+		hostPCIAddress1 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x81", Slot: "0x01", Function: "0x0"}
+		expectHostDevice1 := api.HostDevice{
+			Alias:   newAlias(devName0 + "-function-0x0"),
+			Source:  api.HostDeviceSource{Address: &hostPCIAddress1},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+		hostPCIAddress2 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x81", Slot: "0x01", Function: "0x1"}
+		expectHostDevice2 := api.HostDevice{
+			Alias:   newAlias(devName0 + "-function-0x1"),
+			Source:  api.HostDeviceSource{Address: &hostPCIAddress2},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+
+		const pciAddress2 = "0000:82:01.0"
+		hostPCIAddress3 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x82", Slot: "0x01", Function: "0x0"}
+		expectHostDevice3 := api.HostDevice{
+			Alias:   newAlias(devName1 + "-function-0x0"),
+			Source:  api.HostDeviceSource{Address: &hostPCIAddress3},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+		hostPCIAddress4 := api.Address{Type: api.AddressPCI, Domain: "0x0000", Bus: "0x82", Slot: "0x01", Function: "0x1"}
+		expectHostDevice4 := api.HostDevice{
+			Alias:   newAlias(devName1 + "-function-0x1"),
+			Source:  api.HostDeviceSource{Address: &hostPCIAddress4},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+
+		It("creates 2 multi-function PCI devices that share the same resource", func() {
+			hostDevicesMetaData := []hostdevice.HostDeviceMetaData{
+				{AliasPrefix: aliasPrefix, Name: devName0, ResourceName: resourceName0},
+				{AliasPrefix: aliasPrefix, Name: devName1, ResourceName: resourceName0},
+			}
+			pool.AddResource(resourceName0, pciAddress0, pciAddress2)
+
+			hostDevices, err := createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree(hostDevicesMetaData, pool)
+
+			Expect(hostDevices, err).To(Equal([]api.HostDevice{expectHostDevice1, expectHostDevice2, expectHostDevice3, expectHostDevice4}))
+		})
+
+		It("creates 2 multi-function PCI devices that are connected to different resources", func() {
+			hostDevicesMetaData := []hostdevice.HostDeviceMetaData{
+				{AliasPrefix: aliasPrefix, Name: devName0, ResourceName: resourceName0},
+				{AliasPrefix: aliasPrefix, Name: devName1, ResourceName: resourceName1},
+			}
+			pool.AddResource(resourceName0, pciAddress0)
+			pool.AddResource(resourceName1, pciAddress2)
+
+			hostDevices, err := createMultiFunctionPCIHostDeviceWithMultiFunctionPCITree(hostDevicesMetaData, pool)
+
+			Expect(hostDevices, err).To(Equal([]api.HostDevice{expectHostDevice1, expectHostDevice2, expectHostDevice3, expectHostDevice4}))
+		})
+
+		It("creates 2 single-function PCI devices that share the same resource", func() {
+			hostDevicesMetaData := []hostdevice.HostDeviceMetaData{
+				{AliasPrefix: aliasPrefix, Name: devName0, ResourceName: resourceName0},
+				{AliasPrefix: aliasPrefix, Name: devName1, ResourceName: resourceName0},
+			}
+			pool.AddResource(resourceName0, pciAddress0, pciAddress2)
+
+			hostDevices, err := createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree(hostDevicesMetaData, pool)
+
+			Expect(hostDevices, err).To(Equal([]api.HostDevice{expectHostDevice1, expectHostDevice3}))
+		})
+
+		It("creates 2 single-function PCI devices that are connected to different resources", func() {
+			hostDevicesMetaData := []hostdevice.HostDeviceMetaData{
+				{AliasPrefix: aliasPrefix, Name: devName0, ResourceName: resourceName0},
+				{AliasPrefix: aliasPrefix, Name: devName1, ResourceName: resourceName1},
+			}
+			pool.AddResource(resourceName0, pciAddress0)
+			pool.AddResource(resourceName1, pciAddress2)
+
+			hostDevices, err := createMultiFunctionPCIHostDeviceWithSingleFunctionPCITree(hostDevicesMetaData, pool)
+
+			Expect(hostDevices, err).To(Equal([]api.HostDevice{expectHostDevice1, expectHostDevice3}))
 		})
 	})
 

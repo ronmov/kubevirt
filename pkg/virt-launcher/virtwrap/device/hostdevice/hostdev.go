@@ -26,6 +26,8 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
 
+	hwutil "kubevirt.io/kubevirt/pkg/util/hardware"
+
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/device"
 )
@@ -39,10 +41,12 @@ type HostDeviceMetaData struct {
 	VirtualGPUOptions *v1.VGPUOptions
 	// DecorateHook is a function pointer that may be used to mutate the domain host-device
 	// with additional specific parameters. E.g. guest PCI address.
-	DecorateHook func(hostDevice *api.HostDevice) error
+	DecorateHook    func(hostDevice *api.HostDevice) error
+	FunctionCount   int
+	IsHostDeviceDRA bool
 }
 
-type createHostDevice func(HostDeviceMetaData, string) (*api.HostDevice, error)
+type createHostDevice func(HostDeviceMetaData, string) ([]*api.HostDevice, error)
 
 type AddressPooler interface {
 	Pop(key string) (value string, err error)
@@ -50,6 +54,17 @@ type AddressPooler interface {
 
 func CreatePCIHostDevices(hostDevicesData []HostDeviceMetaData, pciAddrPool AddressPooler) ([]api.HostDevice, error) {
 	return createHostDevices(hostDevicesData, pciAddrPool, createPCIHostDevice)
+}
+
+func CreateMultiFunctionPCIHostDevices(hostDevicesData []HostDeviceMetaData, multiFunctionPciAddrPool AddressPooler, getPCIDeviceToFunctions hwutil.GetPCIDeviceToFunctionsType) ([]api.HostDevice, error) {
+	genericCreateMultiFunctionPCIHostDevice := func(innerHostDevicesData HostDeviceMetaData, innerAddress string) ([]*api.HostDevice, error) {
+		PCIDeviceToFunctions, err := getPCIDeviceToFunctions()
+		if err != nil {
+			return nil, err
+		}
+		return createMultiFunctionPCIHostDevice(PCIDeviceToFunctions, innerHostDevicesData, innerAddress)
+	}
+	return createHostDevices(hostDevicesData, multiFunctionPciAddrPool, genericCreateMultiFunctionPCIHostDevice)
 }
 
 func isVgpuDisplaySet(hostDevicesData []HostDeviceMetaData) bool {
@@ -102,17 +117,22 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 			continue
 		}
 
-		hostDevice, err := createHostDev(hostDeviceData, address)
+		currHostDevices, err := createHostDev(hostDeviceData, address)
 		if err != nil {
 			return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
 		}
-		if hostDeviceData.DecorateHook != nil {
-			if err := hostDeviceData.DecorateHook(hostDevice); err != nil {
-				return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
+		for _, currHostDevice := range currHostDevices {
+			if hostDeviceData.DecorateHook != nil {
+				if err := hostDeviceData.DecorateHook(currHostDevice); err != nil {
+					return nil, fmt.Errorf(failedCreateHostDeviceFmt, hostDeviceData.Name, err)
+				}
 			}
 		}
-		hostDevices = append(hostDevices, *hostDevice)
-		hostDevicesAddresses = append(hostDevicesAddresses, address)
+
+		for _, currHostDevice := range currHostDevices {
+			hostDevices = append(hostDevices, *currHostDevice)
+			hostDevicesAddresses = append(hostDevicesAddresses, device.LibvirtAddressToPrintableString(currHostDevice.Source.Address))
+		}
 	}
 
 	if len(hostDevices) > 0 {
@@ -122,7 +142,7 @@ func createHostDevices(hostDevicesData []HostDeviceMetaData, addrPool AddressPoo
 	return hostDevices, nil
 }
 
-func createPCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress string) (*api.HostDevice, error) {
+func createPCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress string) ([]*api.HostDevice, error) {
 	hostAddr, err := device.NewPciAddressField(hostPCIAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PCI device for %s: %v", hostDeviceData.Name, err)
@@ -133,14 +153,46 @@ func createPCIHostDevice(hostDeviceData HostDeviceMetaData, hostPCIAddress strin
 		Type:    api.HostDevicePCI,
 		Managed: "no",
 	}
-	return domainHostDevice, nil
+	return []*api.HostDevice{domainHostDevice}, nil
 }
 
-func createMDEVHostDeviceWithDisplay(hostDeviceData HostDeviceMetaData, mdevUUID string) (*api.HostDevice, error) {
-	mdev, err := createMDEVHostDevice(hostDeviceData, mdevUUID)
+func createMultiFunctionPCIHostDevice(PCIDeviceToFunctions map[string][]string, hostDeviceData HostDeviceMetaData, hostPCIAddress string) ([]*api.HostDevice, error) {
+	var (
+		domainHostDevices []*api.HostDevice
+	)
+	hostAddrFunction0, err := hwutil.ParsePciAddress(hostPCIAddress)
 	if err != nil {
-		return mdev, err
+		return nil, fmt.Errorf("failed to parse PCI address for %s: %v", hostDeviceData.Name, err)
 	}
+
+	deviceID := hwutil.GetDeviceIdentifier(hostAddrFunction0)
+	deviceFunctions := PCIDeviceToFunctions[deviceID]
+	domainHostAddrFunction0 := device.NewPciAddressFieldFromPciAddress(hostAddrFunction0)
+
+	for _, function := range deviceFunctions {
+		domainHostAddr := domainHostAddrFunction0.DeepCopy()
+		domainHostAddr.Function = "0x" + function
+		domainHostDevice := &api.HostDevice{
+			Alias:   api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + hostDeviceData.Name + "-function-0x" + function),
+			Source:  api.HostDeviceSource{Address: domainHostAddr},
+			Type:    api.HostDevicePCI,
+			Managed: "no",
+		}
+		domainHostDevices = append(domainHostDevices, domainHostDevice)
+	}
+
+	return domainHostDevices, nil
+}
+
+func createMDEVHostDeviceWithDisplay(hostDeviceData HostDeviceMetaData, mdevUUID string) ([]*api.HostDevice, error) {
+	mdevs, err := createMDEVHostDevice(hostDeviceData, mdevUUID)
+	if err != nil {
+		return mdevs, err
+	}
+	if len(mdevs) != 1 {
+		return mdevs, fmt.Errorf("expected createMDEVHostDevice to return exactly one device (got: %d)", len(mdevs))
+	}
+	mdev := mdevs[0]
 	if hostDeviceData.VirtualGPUOptions != nil {
 		if hostDeviceData.VirtualGPUOptions.Display != nil {
 			displayEnabled := hostDeviceData.VirtualGPUOptions.Display.Enabled
@@ -152,10 +204,10 @@ func createMDEVHostDeviceWithDisplay(hostDeviceData HostDeviceMetaData, mdevUUID
 			}
 		}
 	}
-	return mdev, nil
+	return []*api.HostDevice{mdev}, nil
 }
 
-func createMDEVHostDevice(hostDeviceData HostDeviceMetaData, mdevUUID string) (*api.HostDevice, error) {
+func createMDEVHostDevice(hostDeviceData HostDeviceMetaData, mdevUUID string) ([]*api.HostDevice, error) {
 	domainHostDevice := &api.HostDevice{
 		Alias: api.NewUserDefinedAlias(hostDeviceData.AliasPrefix + hostDeviceData.Name),
 		Source: api.HostDeviceSource{
@@ -167,17 +219,17 @@ func createMDEVHostDevice(hostDeviceData HostDeviceMetaData, mdevUUID string) (*
 		Mode:  "subsystem",
 		Model: "vfio-pci",
 	}
-	return domainHostDevice, nil
+	return []*api.HostDevice{domainHostDevice}, nil
 }
 
-func createUSBHostDevice(device HostDeviceMetaData, usbAddress string) (*api.HostDevice, error) {
+func createUSBHostDevice(device HostDeviceMetaData, usbAddress string) ([]*api.HostDevice, error) {
 	strs := strings.Split(usbAddress, ":")
 	if len(strs) != 2 {
 		return nil, fmt.Errorf("Bad value: %s", usbAddress)
 	}
 	bus, deviceNumber := strs[0], strs[1]
 
-	return &api.HostDevice{
+	return []*api.HostDevice{{
 		Type:  api.HostDeviceUSB,
 		Mode:  "subsystem",
 		Alias: api.NewUserDefinedAlias("usb-host-" + device.Name),
@@ -187,5 +239,5 @@ func createUSBHostDevice(device HostDeviceMetaData, usbAddress string) (*api.Hos
 				Device: deviceNumber,
 			},
 		},
-	}, nil
+	}}, nil
 }

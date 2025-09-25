@@ -94,9 +94,9 @@ var _ = Describe("Hardware utils test", func() {
 		It("shoud return an array of PCI DBSF fields (domain, bus, slot, function) or an error for malformed address", func() {
 			testData := []struct {
 				addr        string
-				expectation []string
+				expectation *PciAddress
 			}{
-				{"05EA:Fc:1d.6", []string{"05EA", "Fc", "1d", "6"}},
+				{"05EA:Fc:1d.6", &PciAddress{"05EA", "Fc", "1d", "6"}},
 				{"", nil},
 				{"invalid address", nil},
 				{" 05EA:Fc:1d.6", nil}, // leading symbol
@@ -110,11 +110,11 @@ var _ = Describe("Hardware utils test", func() {
 
 			for _, t := range testData {
 				res, err := ParsePciAddress(t.addr)
-				Expect(res).To(Equal(t.expectation))
 				if t.expectation == nil {
 					Expect(err).To(HaveOccurred())
 				} else {
 					Expect(err).ToNot(HaveOccurred())
+					Expect(res).To(Equal(*t.expectation))
 				}
 			}
 		})
