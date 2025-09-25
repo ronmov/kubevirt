@@ -23341,6 +23341,13 @@ func schema_kubevirtio_api_core_v1_PciHostDevice(ref common.ReferenceCallback) c
 							Format:      "",
 						},
 					},
+					"numberOfFunctions": {
+						SchemaProps: spec.SchemaProps{
+							Description: "If this resource should be treated as a single-function resource, this value must be 0. If this resource should be treated as a multi-function resource, specify the number of functions this PCI device exposes. When managing a multi-function resource KubeVirt will treat all functions as a single schedulable unit. During the VM creation this number of functions will be passed to the VM - thus passing the entire multi-function device.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
 				},
 				Required: []string{"pciVendorSelector", "resourceName"},
 			},

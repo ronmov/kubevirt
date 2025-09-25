@@ -223,7 +223,8 @@
           {
             "pciVendorSelector": "pciVendorSelectorValue",
             "resourceName": "resourceNameValue",
-            "externalResourceProvider": true
+            "externalResourceProvider": true,
+            "numberOfFunctions": -17
           }
         ],
         "mediatedDevices": [

@@ -1402,6 +1402,16 @@ var CRDsValidation map[string]string = map[string]string{
                           If true, KubeVirt will leave the allocation and monitoring to an
                           external device plugin
                         type: boolean
+                      numberOfFunctions:
+                        default: 0
+                        description: |-
+                          If this resource should be treated as a single-function resource, this value must be 0.
+                          If this resource should be treated as a multi-function resource, specify the number of functions this PCI device exposes.
+                          When managing a multi-function resource KubeVirt will treat all functions as a single schedulable unit.
+                          During the VM creation this number of functions will be passed to the VM - thus passing the entire multi-function device.
+                        maximum: 7
+                        minimum: 0
+                        type: integer
                       pciVendorSelector:
                         description: The vendor_id:product_id tuple of the PCI device
                         type: string
