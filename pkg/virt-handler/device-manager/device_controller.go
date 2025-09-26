@@ -206,7 +206,7 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 	}
 
 	if len(hostDevs.PciHostDevices) != 0 {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(hostDevs.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(hostDevs.PciHostDevices, c.virtConfig.MultiFunctionHostDevicesEnabled())
 		if err == nil {
 			for pciResourceName, resources := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
 				log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)

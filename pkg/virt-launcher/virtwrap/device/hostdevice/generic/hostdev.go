@@ -39,9 +39,9 @@ const (
 	DefaultDisplayOff                 = false
 )
 
-func CreateHostDevices(vmiHostDevices []v1.HostDevice) ([]api.HostDevice, error) {
+func CreateHostDevices(vmiHostDevices []v1.HostDevice, multiFunctionHostDevicesFeatureGateEnabled bool) ([]api.HostDevice, error) {
 	return CreateHostDevicesFromPools(vmiHostDevices,
-		NewPCIAddressPool(vmiHostDevices), NewMultiFunctionPCIAddressPool(vmiHostDevices), NewMDEVAddressPool(vmiHostDevices), NewUSBAddressPool(vmiHostDevices), hwutil.GetPCIDeviceToFunctions)
+		NewPCIAddressPool(vmiHostDevices), NewMultiFunctionPCIAddressPool(vmiHostDevices, multiFunctionHostDevicesFeatureGateEnabled), NewMDEVAddressPool(vmiHostDevices), NewUSBAddressPool(vmiHostDevices), hwutil.GetPCIDeviceToFunctions)
 }
 
 func CreateHostDevicesFromPools(vmiHostDevices []v1.HostDevice, pciAddressPool, multiFunctionPciAddressPool, mdevAddressPool, usbAddressPool hostdevice.AddressPooler, getPCIDeviceToFunctions hwutil.GetPCIDeviceToFunctionsType) ([]api.HostDevice, error) {

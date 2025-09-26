@@ -37,6 +37,7 @@ import (
 	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/util"
+	"kubevirt.io/kubevirt/pkg/virt-config/featuregate"
 	pluginapi "kubevirt.io/kubevirt/pkg/virt-handler/device-manager/deviceplugin/v1beta1"
 )
 
@@ -284,7 +285,7 @@ func (dpi *PCIDevicePlugin) healthCheck() error {
 	}
 }
 
-func validatePciHostDevicesConfiguration(KVConfigHostDevices []v1.PciHostDevice) (map[string]PciResourceDiscoveryDescriptor, error) {
+func validatePciHostDevicesConfiguration(KVConfigHostDevices []v1.PciHostDevice, multiFunctionHostDevicesFeatureGateEnabled bool) (map[string]PciResourceDiscoveryDescriptor, error) {
 	var devicesSet = make(map[string]struct{})
 
 	const (
@@ -294,6 +295,9 @@ func validatePciHostDevicesConfiguration(KVConfigHostDevices []v1.PciHostDevice)
 
 	supportedPCIDeviceMap := make(map[string]PciResourceDiscoveryDescriptor)
 	for _, pciDev := range KVConfigHostDevices {
+		if !multiFunctionHostDevicesFeatureGateEnabled && pciDev.NumberOfFunctions != 0 {
+			return nil, fmt.Errorf("%s feature gate must be enabled to use multi-function host devices (ResourceName: %s, PCIID: %s)", featuregate.MultiFunctionHostDevicesGate, pciDev.ResourceName, pciDev.PCIVendorSelector)
+		}
 		if pciDev.NumberOfFunctions == 0 {
 			_, found := devicesSet[pciDev.PCIVendorSelector+multiFunctionDeviceSetSuffix]
 			if found {

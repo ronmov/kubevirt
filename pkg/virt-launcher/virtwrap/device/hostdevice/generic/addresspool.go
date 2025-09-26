@@ -33,8 +33,13 @@ func NewPCIAddressPool(hostDevices []v1.HostDevice) *hostdevice.AddressPool {
 
 // NewMultiFunctionPCIAddressPool creates a multifunction PCI address pool based on the provided list of host-devices and
 // the environment variables that describe the resource.
-func NewMultiFunctionPCIAddressPool(hostDevices []v1.HostDevice) *hostdevice.AddressPool {
-	return hostdevice.NewAddressPool(v1.MultiFunctionPCIResourcePrefix, extractResources(hostDevices))
+func NewMultiFunctionPCIAddressPool(hostDevices []v1.HostDevice, multiFunctionHostDevicesFeatureGateEnabled bool) *hostdevice.AddressPool {
+	resources := extractResources(hostDevices)
+	if !multiFunctionHostDevicesFeatureGateEnabled && len(resources) > 0 {
+		// TODO: error report correctly
+		return nil
+	}
+	return hostdevice.NewAddressPool(v1.MultiFunctionPCIResourcePrefix, resources)
 }
 
 // NewMDEVAddressPool creates a MDEV address pool based on the provided list of host-devices and

@@ -119,7 +119,7 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 1 matching PCI device", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find a PCI device at 0000:00:00.0
@@ -135,7 +135,7 @@ pciHostDevices:
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find a PCI device at 0000:00:00.0
@@ -262,7 +262,7 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 1 matching PCI device", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
@@ -278,7 +278,7 @@ pciHostDevices:
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
@@ -349,7 +349,7 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 2 matching PCI devices", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
@@ -371,7 +371,7 @@ pciHostDevices:
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find the single-function and multi-function PCI devices at singleFunctionFakeAddress and multifunctionFakeAddress 1 and 2
@@ -404,7 +404,7 @@ pciHostDevices:
 		Expect(fakePermittedHostDevices.PciHostDevices[1].PCIVendorSelector).To(Equal(singleFunctionFakeID))
 		Expect(fakePermittedHostDevices.PciHostDevices[1].ResourceName).To(Equal(multiFunctionFakeName))
 
-		_, err = validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		_, err = validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -425,7 +425,7 @@ pciHostDevices:
 		Expect(fakePermittedHostDevices.PciHostDevices[1].PCIVendorSelector).To(Equal(singleFunctionFakeID))
 		Expect(fakePermittedHostDevices.PciHostDevices[1].ResourceName).To(Equal(singleFunctionFakeName))
 
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(supportedPCIDeviceMap).To(HaveLen(1))

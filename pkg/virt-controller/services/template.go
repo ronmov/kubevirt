@@ -414,6 +414,9 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			log.Log.Object(vmi).Infof("Applying custom debug filters for vmi %s: %s", vmi.Name, customDebugFilters)
 			command = append(command, "--libvirt-log-filters", customDebugFilters)
 		}
+		if t.clusterConfig.MultiFunctionHostDevicesEnabled() {
+			command = append(command, "--multifunction-hostdevices")
+		}
 	}
 
 	if t.clusterConfig.AllowEmulation() {

@@ -194,9 +194,10 @@ type LibvirtDomainManager struct {
 	domainStatsCache          *virtcache.TimeDefinedCache[*stats.DomainStats]
 	domainDirtyRateStatsCache *virtcache.TimeDefinedCache[*stats.DomainStatsDirtyRate]
 
-	cpuSetGetter                  func() ([]int, error)
-	imageVolumeFeatureGateEnabled bool
-	setTimeOnce                   sync.Once
+	cpuSetGetter                               func() ([]int, error)
+	imageVolumeFeatureGateEnabled              bool
+	multiFunctionHostDevicesFeatureGateEnabled bool
+	setTimeOnce                                sync.Once
 }
 
 type pausedVMIs struct {
@@ -224,14 +225,14 @@ func (s pausedVMIs) contains(uid types.UID) bool {
 
 func NewLibvirtDomainManager(connection cli.Connection, virtShareDir, ephemeralDiskDir string, agentStore *agentpoller.AsyncAgentStore,
 	ovmfPath string, ephemeralDiskCreator ephemeraldisk.EphemeralDiskCreatorInterface, metadataCache *metadata.Cache,
-	stopChan chan struct{}, diskMemoryLimitBytes int64, cpuSetGetter func() ([]int, error), imageVolumeEnabled bool) (DomainManager, error) {
+	stopChan chan struct{}, diskMemoryLimitBytes int64, cpuSetGetter func() ([]int, error), imageVolumeEnabled bool, multiFunctionHostDevicesEnabled bool) (DomainManager, error) {
 	directIOChecker := converter.NewDirectIOChecker()
-	return newLibvirtDomainManager(connection, virtShareDir, ephemeralDiskDir, agentStore, ovmfPath, ephemeralDiskCreator, directIOChecker, metadataCache, stopChan, diskMemoryLimitBytes, cpuSetGetter, imageVolumeEnabled)
+	return newLibvirtDomainManager(connection, virtShareDir, ephemeralDiskDir, agentStore, ovmfPath, ephemeralDiskCreator, directIOChecker, metadataCache, stopChan, diskMemoryLimitBytes, cpuSetGetter, imageVolumeEnabled, multiFunctionHostDevicesEnabled)
 }
 
 func newLibvirtDomainManager(connection cli.Connection, virtShareDir, ephemeralDiskDir string, agentStore *agentpoller.AsyncAgentStore, ovmfPath string,
 	ephemeralDiskCreator ephemeraldisk.EphemeralDiskCreatorInterface, directIOChecker converter.DirectIOChecker, metadataCache *metadata.Cache,
-	stopChan chan struct{}, diskMemoryLimitBytes int64, cpuSetGetter func() ([]int, error), imageVolumeEnabled bool) (DomainManager, error) {
+	stopChan chan struct{}, diskMemoryLimitBytes int64, cpuSetGetter func() ([]int, error), imageVolumeEnabled bool, multiFunctionHostDevicesEnabled bool) (DomainManager, error) {
 	manager := LibvirtDomainManager{
 		diskMemoryLimitBytes: diskMemoryLimitBytes,
 		virConn:              connection,
@@ -251,6 +252,7 @@ func newLibvirtDomainManager(connection cli.Connection, virtShareDir, ephemeralD
 		cpuSetGetter:                  cpuSetGetter,
 		setTimeOnce:                   sync.Once{},
 		imageVolumeFeatureGateEnabled: imageVolumeEnabled,
+		multiFunctionHostDevicesFeatureGateEnabled: multiFunctionHostDevicesEnabled,
 	}
 
 	manager.hotplugHostDevicesInProgress = make(chan struct{}, maxConcurrentHotplugHostDevices)
@@ -976,7 +978,7 @@ func shouldExpandOffline(disk api.Disk) bool {
 	return true
 }
 
-func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineInstance, allowEmulation bool, options *cmdv1.VirtualMachineOptions, isMigrationTarget bool) (*converter.ConverterContext, error) {
+func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineInstance, allowEmulation bool, options *cmdv1.VirtualMachineOptions, isMigrationTarget, multiFunctionHostDevicesFeatureGateEnabled bool) (*converter.ConverterContext, error) {
 
 	logger := log.Log.Object(vmi)
 
@@ -1097,7 +1099,7 @@ func (l *LibvirtDomainManager) generateConverterContext(vmi *v1.VirtualMachineIn
 		c.HotplugVolumes = hotplugVolumes
 		c.SRIOVDevices = sriovDevices
 
-		genericHostDevices, err := generic.CreateHostDevices(vmi.Spec.Domain.Devices.HostDevices)
+		genericHostDevices, err := generic.CreateHostDevices(vmi.Spec.Domain.Devices.HostDevices, multiFunctionHostDevicesFeatureGateEnabled)
 		if err != nil {
 			return nil, err
 		}
@@ -1156,7 +1158,7 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, allowEmul
 		}
 	}
 
-	c, err := l.generateConverterContext(vmi, allowEmulation, options, false)
+	c, err := l.generateConverterContext(vmi, allowEmulation, options, false, l.multiFunctionHostDevicesFeatureGateEnabled)
 	if err != nil {
 		logger.Reason(err).Error("failed to generate libvirt domain from VMI spec")
 		return nil, err

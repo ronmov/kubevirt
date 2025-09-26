@@ -128,6 +128,12 @@ const (
 	//
 	// PasstIPStackMigration enables seamless migration with passt network binding.
 	PasstIPStackMigration = "PasstIPStackMigration"
+
+	// Owner: @ronmov
+	// Alpha: 1.7.0
+	//
+	// MultiFunctionHostDevices allows requesting a single resource of a multi-function host device and the VM will be scheduled with all of its associated functions
+	MultiFunctionHostDevicesGate = "MultiFunctionHostDevices"
 )
 
 func init() {
@@ -161,4 +167,5 @@ func init() {
 	RegisterFeatureGate(FeatureGate{Name: VideoConfig, State: Alpha})
 	RegisterFeatureGate(FeatureGate{Name: PanicDevicesGate, State: Alpha})
 	RegisterFeatureGate(FeatureGate{Name: PasstIPStackMigration, State: Alpha})
+	RegisterFeatureGate(FeatureGate{Name: MultiFunctionHostDevicesGate, State: Alpha})
 }
