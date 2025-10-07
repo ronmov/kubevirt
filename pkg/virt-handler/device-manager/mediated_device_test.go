@@ -108,7 +108,7 @@ var _ = Describe("Mediated Device", func() {
 			handler = mockPCI
 			// Force pre-defined returned values and ensure the function only get called exacly once each on 0000:00:00.0
 			mockPCI.EXPECT().GetMdevParentPCIAddr(fakeMdevUUID).Return(singleFunctionFakeAddress, nil).Times(1)
-			mockPCI.EXPECT().GetDeviceIOMMUGroup(mdevBasePath, fakeMdevUUID).Return(fakeIommuGroup, nil).Times(1)
+			mockPCI.EXPECT().GetDeviceIOMMUGroup(mdevBasePath, fakeMdevUUID).Return(singleFunctionFakeIommuGroup, nil).Times(1)
 			mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, singleFunctionFakeAddress).Return(fakeNumaNode).Times(1)
 
 			By("creating a list of fake device using the yaml decoder")
@@ -141,7 +141,7 @@ var _ = Describe("Mediated Device", func() {
 			Expect(devices[selector][0].UUID).To(Equal(fakeMdevUUID))
 			Expect(devices[selector][0].typeName).To(Equal(selector))
 			Expect(devices[selector][0].parentPciAddress).To(Equal(singleFunctionFakeAddress))
-			Expect(devices[selector][0].iommuGroup).To(Equal(fakeIommuGroup))
+			Expect(devices[selector][0].iommuGroup).To(Equal(singleFunctionFakeIommuGroup))
 			Expect(devices[selector][0].numaNode).To(Equal(fakeNumaNode))
 		})
 
@@ -159,7 +159,7 @@ var _ = Describe("Mediated Device", func() {
 			mDevices := discoverPermittedHostMediatedDevices(supportedMdevsMap)
 			selector := removeSelectorSpaces(fakeMdevNameSelector)
 			devs := constructDPIdevicesFromMdev(mDevices[selector], iommuToMDEVMap)
-			Expect(devs[0].ID).To(Equal(fakeIommuGroup))
+			Expect(devs[0].ID).To(Equal(singleFunctionFakeIommuGroup))
 			Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
 		})
 

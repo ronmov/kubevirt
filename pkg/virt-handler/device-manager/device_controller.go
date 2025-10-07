@@ -208,10 +208,14 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 	if len(hostDevs.PciHostDevices) != 0 {
 		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(hostDevs.PciHostDevices)
 		if err == nil {
-			for pciResourceName, resources := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
-				log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
-				// add a device plugin only for new devices
-				permittedDevices = append(permittedDevices, NewPCIDevicePlugin(resources, pciResourceName))
+			singleFunctionPciDevicesMap, multiFunctionPciDevicesMap := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
+			for pciResourceName, resources := range singleFunctionPciDevicesMap {
+				log.Log.V(4).Infof("single-function: Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
+				permittedDevices = append(permittedDevices, NewSingleFunctionPCIDevicePlugin(resources, pciResourceName))
+			}
+			for pciResourceName, resources := range multiFunctionPciDevicesMap {
+				log.Log.V(4).Infof("multi-function: Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
+				permittedDevices = append(permittedDevices, NewMultiFunctionPCIDevicePlugin(resources, pciResourceName))
 			}
 		} else {
 			log.Log.Reason(err).Errorf("validation of PciHostDevices configuration failed, %v", err)

@@ -20,23 +20,18 @@
 package device_manager
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/fsnotify/fsnotify"
 	"google.golang.org/grpc"
-
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
 
-	"kubevirt.io/kubevirt/pkg/util"
 	pluginapi "kubevirt.io/kubevirt/pkg/virt-handler/device-manager/deviceplugin/v1beta1"
 )
 
@@ -57,10 +52,9 @@ type PCIDevice struct {
 	numaNode   int
 }
 
-type PCIDevicePlugin struct {
+type PCIDevicePluginBase struct {
 	*DevicePluginBase
-	iommuToPCIMap     map[string]string
-	NumberOfFunctions int
+	iommuToPCIMap map[string]string
 }
 
 type PciResourceVariantDiscoveryDescriptor struct {
@@ -73,12 +67,21 @@ type PciResourceDiscoveryDescriptor struct {
 	pciResourceVariants []PciResourceVariantDiscoveryDescriptor
 }
 
-type PciResourceDescriptor struct {
-	devices           []*PCIDevice
+type SingleFunctionPciResourceDescriptor struct {
+	devices []*PCIDevice
+}
+
+type MultiFunctionPCIDevice struct {
+	function0           *PCIDevice
+	associatedFunctions []*PCIDevice
+}
+
+type MultiFunctionPciResourceDescriptor struct {
+	devices           []*MultiFunctionPCIDevice
 	NumberOfFunctions int
 }
 
-func (dpi *PCIDevicePlugin) Start(stop <-chan struct{}) (err error) {
+func (dpi *PCIDevicePluginBase) Start(stop <-chan struct{}) (err error) {
 	logger := log.DefaultLogger()
 	dpi.stop = stop
 
@@ -124,89 +127,7 @@ func (dpi *PCIDevicePlugin) Start(stop <-chan struct{}) (err error) {
 	return err
 }
 
-func NewPCIDevicePlugin(resources PciResourceDescriptor, resourceName string) *PCIDevicePlugin {
-	serverSock := SocketPath(strings.Replace(resourceName, "/", "-", -1))
-	iommuToPCIMap := make(map[string]string)
-
-	devs := constructDPIdevices(resources.devices, iommuToPCIMap)
-
-	dpi := &PCIDevicePlugin{
-		DevicePluginBase: &DevicePluginBase{
-			devs:         devs,
-			initialized:  false,
-			lock:         &sync.Mutex{},
-			socketPath:   serverSock,
-			devicePath:   vfioDevicePath,
-			resourceName: resourceName,
-			deviceRoot:   util.HostRootMount,
-			health:       make(chan deviceHealth),
-			done:         make(chan struct{}),
-			deregistered: make(chan struct{}),
-		},
-		iommuToPCIMap:     iommuToPCIMap,
-		NumberOfFunctions: resources.NumberOfFunctions,
-	}
-	return dpi
-}
-
-func constructDPIdevices(pciDevices []*PCIDevice, iommuToPCIMap map[string]string) (devs []*pluginapi.Device) {
-	for _, pciDevice := range pciDevices {
-		iommuToPCIMap[pciDevice.iommuGroup] = pciDevice.pciAddress
-		dpiDev := &pluginapi.Device{
-			ID:     pciDevice.iommuGroup,
-			Health: pluginapi.Healthy,
-		}
-		if pciDevice.numaNode >= 0 {
-			numaInfo := &pluginapi.NUMANode{
-				ID: int64(pciDevice.numaNode),
-			}
-			dpiDev.Topology = &pluginapi.TopologyInfo{
-				Nodes: []*pluginapi.NUMANode{numaInfo},
-			}
-		}
-		devs = append(devs, dpiDev)
-	}
-	return
-}
-
-func (dpi *PCIDevicePlugin) Allocate(_ context.Context, r *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
-	var resourceNameEnvVar string
-	if dpi.NumberOfFunctions != 0 {
-		resourceNameEnvVar = util.ResourceNameToEnvVar(v1.MultiFunctionPCIResourcePrefix, dpi.resourceName)
-	} else {
-		resourceNameEnvVar = util.ResourceNameToEnvVar(v1.PCIResourcePrefix, dpi.resourceName)
-	}
-	allocatedDevices := []string{}
-	resp := new(pluginapi.AllocateResponse)
-	containerResponse := new(pluginapi.ContainerAllocateResponse)
-
-	for _, request := range r.ContainerRequests {
-		deviceSpecs := make([]*pluginapi.DeviceSpec, 0)
-		for _, devID := range request.DevicesIDs {
-			// translate device's iommu group to its pci address
-			devPCIAddress, exist := dpi.iommuToPCIMap[devID]
-			if !exist {
-				continue
-			}
-			// TODO: in case of multi-function add all related vfio devices
-			allocatedDevices = append(allocatedDevices, devPCIAddress)
-			deviceSpecs = append(deviceSpecs, formatVFIODeviceSpecs(devID)...)
-		}
-		containerResponse.Devices = deviceSpecs
-		envVar := make(map[string]string)
-		envVar[resourceNameEnvVar] = strings.Join(allocatedDevices, ",")
-
-		if dpi.NumberOfFunctions != 0 {
-			envVar[util.ResourceNameToEnvVar(v1.MultiFunctionCountPCIResourcePrefix, dpi.resourceName)] = strconv.FormatInt(int64(dpi.NumberOfFunctions), 10)
-		}
-
-		containerResponse.Envs = envVar
-		resp.ContainerResponses = append(resp.ContainerResponses, containerResponse)
-	}
-	return resp, nil
-}
-
-func (dpi *PCIDevicePlugin) healthCheck() error {
+func (dpi *PCIDevicePluginBase) healthCheck() error {
 	logger := log.DefaultLogger()
 	monitoredDevices := make(map[string]string)
 	watcher, err := fsnotify.NewWatcher()
@@ -282,6 +203,26 @@ func (dpi *PCIDevicePlugin) healthCheck() error {
 			}
 		}
 	}
+}
+
+func createServerSockerPath(resourceName string) string {
+	return SocketPath(strings.Replace(resourceName, "/", "-", -1))
+}
+
+func constructDPIdevice(pciDevice *PCIDevice) *pluginapi.Device {
+	dpiDev := &pluginapi.Device{
+		ID:     pciDevice.iommuGroup,
+		Health: pluginapi.Healthy,
+	}
+	if pciDevice.numaNode >= 0 {
+		numaInfo := &pluginapi.NUMANode{
+			ID: int64(pciDevice.numaNode),
+		}
+		dpiDev.Topology = &pluginapi.TopologyInfo{
+			Nodes: []*pluginapi.NUMANode{numaInfo},
+		}
+	}
+	return dpiDev
 }
 
 func validatePciHostDevicesConfiguration(KVConfigHostDevices []v1.PciHostDevice) (map[string]PciResourceDiscoveryDescriptor, error) {
@@ -362,7 +303,8 @@ func handleSingleFunctionDeviceDiscovery(pciID, address, driver string) (*PCIDev
 	}, nil
 }
 
-func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResourceVariants []PciResourceVariantDiscoveryDescriptor) (*PCIDevice, *PciResourceVariantDiscoveryDescriptor, error) {
+func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResourceVariants []PciResourceVariantDiscoveryDescriptor) (*MultiFunctionPCIDevice, *PciResourceVariantDiscoveryDescriptor, error) {
+	var associatedFunctions []*PCIDevice
 	device, err := handleSingleFunctionDeviceDiscovery(pciID, address, driver)
 	if err != nil {
 		return nil, nil, err
@@ -392,7 +334,19 @@ func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResour
 			return fmt.Errorf("device %s not bound to vfio-pci", info.Name())
 		}
 
+		iommuGroup, err := handler.GetDeviceIOMMUGroup(pciBasePath, info.Name())
+		if err != nil {
+			return err
+		}
+
 		functionCount++
+		associatedFunctions = append(associatedFunctions, &PCIDevice{
+			pciID:      pciID,
+			pciAddress: info.Name(),
+			iommuGroup: iommuGroup,
+			driver:     driver,
+			numaNode:   handler.GetDeviceNumaNode(pciBasePath, info.Name()),
+		})
 		return nil
 	})
 	if err != nil {
@@ -401,15 +355,16 @@ func handleMultiFunctionDeviceDiscovery(pciID, address, driver string, pciResour
 
 	for _, resourceVariant := range pciResourceVariants {
 		if resourceVariant.NumberOfFunctions == functionCount {
-			return device, &resourceVariant, nil
+			return &MultiFunctionPCIDevice{device, associatedFunctions}, &resourceVariant, nil
 		}
 	}
 
 	return nil, nil, fmt.Errorf("multi-function device with %d functions found but it is not configured for passthrough", functionCount)
 }
 
-func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]PciResourceDiscoveryDescriptor) map[string]PciResourceDescriptor {
-	pciDevicesMap := make(map[string]PciResourceDescriptor)
+func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]PciResourceDiscoveryDescriptor) (map[string]SingleFunctionPciResourceDescriptor, map[string]MultiFunctionPciResourceDescriptor) {
+	singleFunctionPciDevicesMap := make(map[string]SingleFunctionPciResourceDescriptor)
+	multiFunctionPciDevicesMap := make(map[string]MultiFunctionPciResourceDescriptor)
 
 	err := MockableWalk(pciBasePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
@@ -434,12 +389,19 @@ func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]PciResourc
 
 			isSingleFunctionDevice := len(pciDev.pciResourceVariants) == 1 && pciDev.pciResourceVariants[0].NumberOfFunctions == 0
 
-			var device *PCIDevice
-			deviceVariant := &pciDev.pciResourceVariants[0] // at least one variant per supported PCIID exists in the map
 			if isSingleFunctionDevice {
-				device, err = handleSingleFunctionDeviceDiscovery(pciID, info.Name(), driver)
+				deviceVariant := &pciDev.pciResourceVariants[0]
+				device, err := handleSingleFunctionDeviceDiscovery(pciID, info.Name(), driver)
+				if err != nil {
+					desc := singleFunctionPciDevicesMap[deviceVariant.ResourceName]
+					desc.devices = append(desc.devices, device)
+				}
 			} else if !isSingleFunctionDevice && strings.HasSuffix(info.Name(), ".0") {
-				device, deviceVariant, err = handleMultiFunctionDeviceDiscovery(pciID, info.Name(), driver, pciDev.pciResourceVariants)
+				device, deviceVariant, err := handleMultiFunctionDeviceDiscovery(pciID, info.Name(), driver, pciDev.pciResourceVariants)
+				if err != nil {
+					desc := multiFunctionPciDevicesMap[deviceVariant.ResourceName]
+					desc.devices = append(desc.devices, device)
+				}
 			} else {
 				return nil
 			}
@@ -447,16 +409,11 @@ func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]PciResourc
 				log.DefaultLogger().Reason(err).Errorf("failed to discover device: %s, error: %v", info.Name(), err)
 				return nil
 			}
-
-			desc := pciDevicesMap[deviceVariant.ResourceName]
-			desc.devices = append(desc.devices, device)
-			desc.NumberOfFunctions = deviceVariant.NumberOfFunctions
-			pciDevicesMap[deviceVariant.ResourceName] = desc
 		}
 		return nil
 	})
 	if err != nil {
 		log.DefaultLogger().Reason(err).Errorf("failed to discover host devices")
 	}
-	return pciDevicesMap
+	return singleFunctionPciDevicesMap, multiFunctionPciDevicesMap
 }

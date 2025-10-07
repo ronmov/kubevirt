@@ -11,9 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/kubernetes/fake"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -25,18 +23,24 @@ import (
 )
 
 const (
-	singleFunctionFakeName    = "example.org/deadbeef"
-	multiFunctionFakeName     = "example.org/deadbeef_2F"
-	singleFunctionFakeID      = "dead:beef"
-	multiFunctionFakeID       = "bead:feeb"
-	fakeDriver                = "vfio-pci"
-	singleFunctionFakeAddress = "0000:00:00.0"
-	multiFunctionFakeAddress1 = "0000:01:00.0"
-	multiFunctionFakeAddress2 = "0000:01:00.1"
-	generalFakeAddress        = "0000:02:00.0"
+	singleFunctionFakeName     = "example.org/deadbeef"
+	multiFunctionFakeName      = "example.org/deadbeef_2F"
+	singleFunctionFakeID       = "dead:beef"
+	multiFunctionFakeID        = "bead:feeb"
+	fakeDriver                 = "vfio-pci"
+	singleFunctionFakeAddress  = "0000:00:00.0"
+	multiFunction1FakeAddress0 = "0000:01:00.0"
+	multiFunction1FakeAddress1 = "0000:01:00.1"
+	multiFunction2FakeAddress0 = "0000:02:00.0"
+	multiFunction2FakeAddress2 = "0000:02:00.2" // intentionally have a "hole" at function 1 of this device
+	generalFakeAddress         = "0000:03:00.0"
 
-	fakeIommuGroup = "0"
-	fakeNumaNode   = 0
+	singleFunctionFakeIommuGroup          = "0"
+	multiFunction1Function0FakeIommuGroup = "1" // simulate both functions of multiFunction1 on the same iommu group
+	multiFunction1Function1FakeIommuGroup = "1"
+	multiFunction2Function0FakeIommuGroup = "2" // simulate functions of multiFunction2 on different iommu groups
+	multiFunction2Function1FakeIommuGroup = "3"
+	fakeNumaNode                          = 0
 )
 
 // simple fake implementation of os.FileInfo
@@ -53,20 +57,21 @@ func (f fakeInfo) Sys() interface{}       { return nil }
 
 func fakePciTreeWalk(root string, fn filepath.WalkFunc) error {
 	const expectedPath = "/sys/bus/pci/devices"
+	mockFiles := []fakeInfo{
+		{singleFunctionFakeAddress},
+		{multiFunction1FakeAddress0},
+		{multiFunction1FakeAddress1},
+		{multiFunction2FakeAddress0},
+		{multiFunction2FakeAddress2},
+		{generalFakeAddress},
+	}
 	if root != expectedPath {
 		return fmt.Errorf("expected implementation to call MockableWalk on %s", expectedPath)
 	}
-	if err := fn(path.Join(root, singleFunctionFakeAddress), fakeInfo{name: singleFunctionFakeAddress}, nil); err != nil {
-		return err
-	}
-	if err := fn(path.Join(root, multiFunctionFakeAddress1), fakeInfo{name: multiFunctionFakeAddress1}, nil); err != nil {
-		return err
-	}
-	if err := fn(path.Join(root, multiFunctionFakeAddress2), fakeInfo{name: multiFunctionFakeAddress2}, nil); err != nil {
-		return err
-	}
-	if err := fn(path.Join(root, generalFakeAddress), fakeInfo{name: generalFakeAddress}, nil); err != nil {
-		return err
+	for _, file := range mockFiles {
+		if err := fn(path.Join(root, file.name), file, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -92,8 +97,8 @@ var _ = Describe("single-function PCI Device", func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockPCI = NewMockDeviceHandler(ctrl)
 		handler = mockPCI
-		// Force pre-defined returned values and ensure the function only get called exacly once each on 0000:00:00.0
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, singleFunctionFakeAddress).Return(fakeIommuGroup, nil).Times(1)
+		// Force pre-defined returned values and ensure the function only get called exactly once each on singleFunctionFakeAddress
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, singleFunctionFakeAddress).Return(singleFunctionFakeIommuGroup, nil).Times(1)
 		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, singleFunctionFakeAddress).Return(fakeDriver, nil).Times(1)
 		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, singleFunctionFakeAddress).Return(fakeNumaNode).Times(1)
 		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, singleFunctionFakeAddress).Return(singleFunctionFakeID, nil).Times(1)
@@ -119,29 +124,26 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 1 matching PCI device", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find a PCI device at 0000:00:00.0
 		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
 		Expect(devices).To(HaveLen(1), "only one single-function PCI device is expected to be found")
 		Expect(devices[singleFunctionFakeName].devices).To(HaveLen(1), "only one single-function PCI device is expected to be found")
 		Expect(devices[singleFunctionFakeName].devices[0].pciID).To(Equal(singleFunctionFakeID))
 		Expect(devices[singleFunctionFakeName].devices[0].driver).To(Equal(fakeDriver))
 		Expect(devices[singleFunctionFakeName].devices[0].pciAddress).To(Equal(singleFunctionFakeAddress))
-		Expect(devices[singleFunctionFakeName].devices[0].iommuGroup).To(Equal(fakeIommuGroup))
+		Expect(devices[singleFunctionFakeName].devices[0].iommuGroup).To(Equal(singleFunctionFakeIommuGroup))
 		Expect(devices[singleFunctionFakeName].devices[0].numaNode).To(Equal(fakeNumaNode))
 	})
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		multifunctionAdditionalIommuGroups := make(map[string][]string)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find a PCI device at 0000:00:00.0
 		pciDevices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
-		devs := constructDPIdevices(pciDevices[singleFunctionFakeName].devices, iommuToPCIMap)
-		Expect(devs[0].ID).To(Equal(fakeIommuGroup))
+		devs := constructDPIdevices(pciDevices[singleFunctionFakeName].devices, iommuToPCIMap, multifunctionAdditionalIommuGroups)
+		Expect(devs[0].ID).To(Equal(singleFunctionFakeIommuGroup))
 		Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
 	})
 	It("Should update the device list according to the configmap", func() {
@@ -224,21 +226,21 @@ var _ = Describe("multi-function PCI Device", func() {
 	BeforeEach(func() {
 		MockableWalk = fakePciTreeWalk
 
-		By("mocking PCI functions to simulate a vfio-pci device at " + multiFunctionFakeAddress1 + " and " + multiFunctionFakeAddress2)
+		By("mocking PCI functions to simulate a vfio-pci device at " + multiFunction1FakeAddress0 + " and " + multiFunction1FakeAddress1)
 		ctrl = gomock.NewController(GinkgoT())
 		mockPCI = NewMockDeviceHandler(ctrl)
 		handler = mockPCI
-		// Force pre-defined returned values and ensure the function only get called exacly once each on 0000:00:00.0
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunctionFakeAddress1).Return(fakeIommuGroup, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunctionFakeAddress1).Return(fakeDriver, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunctionFakeAddress1).Return(fakeNumaNode).Times(1)
-		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunctionFakeAddress1).Return(multiFunctionFakeID, nil).Times(1)
-		mockPCI.EXPECT().IsDeviceVirtualFunction(pciBasePath, multiFunctionFakeAddress1).Times(0)
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunctionFakeAddress2).Times(0)
-		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunctionFakeAddress2).Return(fakeDriver, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunctionFakeAddress2).Times(0)
-		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunctionFakeAddress2).Return(multiFunctionFakeID, nil).Times(1)
-		mockPCI.EXPECT().IsDeviceVirtualFunction(pciBasePath, multiFunctionFakeAddress2).Return(false, nil).Times(1)
+		// Force pre-defined returned values and ensure the function only get called exacly once each on multiFunction1FakeAddress0 and multiFunction1FakeAddress1
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunction1FakeAddress0).Return(multiFunction1Function0FakeIommuGroup, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunction1FakeAddress0).Return(fakeDriver, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunction1FakeAddress0).Return(fakeNumaNode).Times(1)
+		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunction1FakeAddress0).Return(multiFunctionFakeID, nil).Times(1)
+		mockPCI.EXPECT().IsDeviceVirtualFunction(pciBasePath, multiFunction1FakeAddress0).Times(0)
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunction1FakeAddress1).Times(0) // TODO: makes sense?
+		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunction1FakeAddress1).Return(fakeDriver, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunction1FakeAddress1).Times(0)
+		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunction1FakeAddress1).Return(multiFunctionFakeID, nil).Times(1)
+		mockPCI.EXPECT().IsDeviceVirtualFunction(pciBasePath, multiFunction1FakeAddress1).Return(false, nil).Times(1)
 		// Allow the regular functions to be called for all the other devices, they're harmless.
 		// Just force the driver to NOT vfio-pci to ensure they all get ignored.
 		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, gomock.Any()).AnyTimes()
@@ -262,29 +264,26 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 1 matching PCI device", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
 		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
 		Expect(devices).To(HaveLen(1), "only one multi-function PCI device is expected to be found")
 		Expect(devices[multiFunctionFakeName].devices).To(HaveLen(1), "only one multi-function PCI device is expected to be found")
 		Expect(devices[multiFunctionFakeName].devices[0].pciID).To(Equal(multiFunctionFakeID))
 		Expect(devices[multiFunctionFakeName].devices[0].driver).To(Equal(fakeDriver))
-		Expect(devices[multiFunctionFakeName].devices[0].pciAddress).To(Equal(multiFunctionFakeAddress1))
-		Expect(devices[multiFunctionFakeName].devices[0].iommuGroup).To(Equal(fakeIommuGroup))
+		Expect(devices[multiFunctionFakeName].devices[0].pciAddress).To(Equal(multiFunction1FakeAddress0))
+		Expect(devices[multiFunctionFakeName].devices[0].iommuGroup).To(Equal(multiFunction1Function0FakeIommuGroup))
 		Expect(devices[multiFunctionFakeName].devices[0].numaNode).To(Equal(fakeNumaNode))
 	})
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		multifunctionAdditionalIommuGroups := make(map[string][]string)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
 		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
-		devs := constructDPIdevices(devices[multiFunctionFakeName].devices, iommuToPCIMap)
-		Expect(devs[0].ID).To(Equal(fakeIommuGroup))
+		devs := constructDPIdevices(devices[multiFunctionFakeName].devices, iommuToPCIMap, multifunctionAdditionalIommuGroups)
+		Expect(devs[0].ID).To(Equal(multiFunction1Function0FakeIommuGroup))
 		Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
 	})
 })
@@ -304,23 +303,23 @@ var _ = Describe("both single-function and multi-function PCI Device", func() {
 	BeforeEach(func() {
 		MockableWalk = fakePciTreeWalk
 
-		By("mocking PCI functions to simulate a vfio-pci device at " + singleFunctionFakeAddress + ", " + multiFunctionFakeAddress1 + " and " + multiFunctionFakeAddress2)
+		By("mocking PCI functions to simulate a vfio-pci device at " + singleFunctionFakeAddress + ", " + multiFunction1FakeAddress0 + " and " + multiFunction1FakeAddress1)
 		ctrl = gomock.NewController(GinkgoT())
 		mockPCI = NewMockDeviceHandler(ctrl)
 		handler = mockPCI
 		// Force pre-defined returned values and ensure the function only get called exacly once each on 0000:00:00.0
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, singleFunctionFakeAddress).Return(fakeIommuGroup, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, singleFunctionFakeAddress).Return(singleFunctionFakeIommuGroup, nil).Times(1)
 		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, singleFunctionFakeAddress).Return(fakeDriver, nil).Times(1)
 		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, singleFunctionFakeAddress).Return(fakeNumaNode).Times(1)
 		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, singleFunctionFakeAddress).Return(singleFunctionFakeID, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunctionFakeAddress1).Return(fakeIommuGroup, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunctionFakeAddress1).Return(fakeDriver, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunctionFakeAddress1).Return(fakeNumaNode).Times(1)
-		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunctionFakeAddress1).Return(multiFunctionFakeID, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunctionFakeAddress2).Times(0)
-		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunctionFakeAddress2).Return(fakeDriver, nil).Times(1)
-		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunctionFakeAddress2).Times(0)
-		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunctionFakeAddress2).Return(multiFunctionFakeID, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunction1FakeAddress0).Return(multiFunction1Function0FakeIommuGroup, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunction1FakeAddress0).Return(fakeDriver, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunction1FakeAddress0).Return(fakeNumaNode).Times(1)
+		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunction1FakeAddress0).Return(multiFunctionFakeID, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceIOMMUGroup(pciBasePath, multiFunction1FakeAddress1).Times(0) // TODO: makes sense?
+		mockPCI.EXPECT().GetDeviceDriver(pciBasePath, multiFunction1FakeAddress1).Return(fakeDriver, nil).Times(1)
+		mockPCI.EXPECT().GetDeviceNumaNode(pciBasePath, multiFunction1FakeAddress1).Times(0)
+		mockPCI.EXPECT().GetDevicePCIID(pciBasePath, multiFunction1FakeAddress1).Return(multiFunctionFakeID, nil).Times(1)
 		mockPCI.EXPECT().IsDeviceVirtualFunction(pciBasePath, gomock.Any()).Return(false, nil).Times(1)
 		// Allow the regular functions to be called for all the other devices, they're harmless.
 		// Just force the driver to NOT vfio-pci to ensure they all get ignored.
@@ -349,38 +348,35 @@ pciHostDevices:
 	})
 
 	It("Should parse the permitted devices and find 2 matching PCI devices", func() {
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find the multi-function PCI device at multifunctionFakeAddress 1 and 2
 		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
 		Expect(devices).To(HaveLen(2), "one single-function and one multi-function PCI devices are expected to be found")
 		Expect(devices[singleFunctionFakeName].devices).To(HaveLen(1), "one single-function PCI device is expected to be found")
 		Expect(devices[singleFunctionFakeName].devices[0].pciID).To(Equal(singleFunctionFakeID))
 		Expect(devices[singleFunctionFakeName].devices[0].driver).To(Equal(fakeDriver))
 		Expect(devices[singleFunctionFakeName].devices[0].pciAddress).To(Equal(singleFunctionFakeAddress))
-		Expect(devices[singleFunctionFakeName].devices[0].iommuGroup).To(Equal(fakeIommuGroup))
+		Expect(devices[singleFunctionFakeName].devices[0].iommuGroup).To(Equal(singleFunctionFakeIommuGroup))
 		Expect(devices[singleFunctionFakeName].devices[0].numaNode).To(Equal(fakeNumaNode))
 		Expect(devices[multiFunctionFakeName].devices).To(HaveLen(1), "one multi-function PCI device is expected to be found")
 		Expect(devices[multiFunctionFakeName].devices[0].pciID).To(Equal(multiFunctionFakeID))
 		Expect(devices[multiFunctionFakeName].devices[0].driver).To(Equal(fakeDriver))
-		Expect(devices[multiFunctionFakeName].devices[0].pciAddress).To(Equal(multiFunctionFakeAddress1))
-		Expect(devices[multiFunctionFakeName].devices[0].iommuGroup).To(Equal(fakeIommuGroup))
+		Expect(devices[multiFunctionFakeName].devices[0].pciAddress).To(Equal(multiFunction1FakeAddress0))
+		Expect(devices[multiFunctionFakeName].devices[0].iommuGroup).To(Equal(multiFunction1Function0FakeIommuGroup))
 		Expect(devices[multiFunctionFakeName].devices[0].numaNode).To(Equal(fakeNumaNode))
 	})
 
 	It("Should validate DPI devices", func() {
 		iommuToPCIMap := make(map[string]string)
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		multifunctionAdditionalIommuGroups := make(map[string][]string)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
-		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
-		// It's assumed here that it will find the single-function and multi-function PCI devices at singleFunctionFakeAddress and multifunctionFakeAddress 1 and 2
 		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
-		devs := constructDPIdevices(devices[multiFunctionFakeName].devices, iommuToPCIMap)
-		Expect(devs[0].ID).To(Equal(fakeIommuGroup))
+		devs := constructDPIdevices(devices[multiFunctionFakeName].devices, iommuToPCIMap, multifunctionAdditionalIommuGroups)
+		Expect(devs[0].ID).To(Equal(multiFunction1Function0FakeIommuGroup))
 		Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
-		devs = constructDPIdevices(devices[singleFunctionFakeName].devices, iommuToPCIMap)
-		Expect(devs[0].ID).To(Equal(fakeIommuGroup))
+		devs = constructDPIdevices(devices[singleFunctionFakeName].devices, iommuToPCIMap, multifunctionAdditionalIommuGroups)
+		Expect(devs[0].ID).To(Equal(singleFunctionFakeIommuGroup))
 		Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
 	})
 })
@@ -404,7 +400,7 @@ pciHostDevices:
 		Expect(fakePermittedHostDevices.PciHostDevices[1].PCIVendorSelector).To(Equal(singleFunctionFakeID))
 		Expect(fakePermittedHostDevices.PciHostDevices[1].ResourceName).To(Equal(multiFunctionFakeName))
 
-		_, err = validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		_, err = validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -425,7 +421,7 @@ pciHostDevices:
 		Expect(fakePermittedHostDevices.PciHostDevices[1].PCIVendorSelector).To(Equal(singleFunctionFakeID))
 		Expect(fakePermittedHostDevices.PciHostDevices[1].ResourceName).To(Equal(singleFunctionFakeName))
 
-		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices)
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(fakePermittedHostDevices.PciHostDevices, true)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(supportedPCIDeviceMap).To(HaveLen(1))
