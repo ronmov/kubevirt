@@ -127,6 +127,21 @@ func (mr *MockDeviceHandlerMockRecorder) GetMdevParentPCIAddr(mdevUUID any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMdevParentPCIAddr", reflect.TypeOf((*MockDeviceHandler)(nil).GetMdevParentPCIAddr), mdevUUID)
 }
 
+// IsDeviceVirtualFunction mocks base method.
+func (m *MockDeviceHandler) IsDeviceVirtualFunction(basepath, pciAddress string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsDeviceVirtualFunction", basepath, pciAddress)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsDeviceVirtualFunction indicates an expected call of IsDeviceVirtualFunction.
+func (mr *MockDeviceHandlerMockRecorder) IsDeviceVirtualFunction(basepath, pciAddress any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsDeviceVirtualFunction", reflect.TypeOf((*MockDeviceHandler)(nil).IsDeviceVirtualFunction), basepath, pciAddress)
+}
+
 // ReadMDEVAvailableInstances mocks base method.
 func (m *MockDeviceHandler) ReadMDEVAvailableInstances(mdevType, parentID string) (int, error) {
 	m.ctrl.T.Helper()

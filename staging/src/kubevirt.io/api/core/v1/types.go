@@ -3224,6 +3224,15 @@ type PciHostDevice struct {
 	// If true, KubeVirt will leave the allocation and monitoring to an
 	// external device plugin
 	ExternalResourceProvider bool `json:"externalResourceProvider,omitempty"`
+	// If this resource should be treated as a single-function resource, this value must be 0.
+	// If this resource should be treated as a multi-function resource, specify the number of functions this PCI device exposes.
+	// When managing a multi-function resource KubeVirt will treat all functions as a single schedulable unit.
+	// During the VM creation this number of functions will be passed to the VM - thus passing the entire multi-function device.
+	// +optional
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=7
+	NumberOfFunctions int `json:"numberOfFunctions,omitempty"`
 }
 
 // MediatedHostDevice represents a host mediated device allowed for passthrough

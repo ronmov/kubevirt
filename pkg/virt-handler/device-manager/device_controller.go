@@ -206,21 +206,19 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 	}
 
 	if len(hostDevs.PciHostDevices) != 0 {
-		supportedPCIDeviceMap := make(map[string]string)
-		for _, pciDev := range hostDevs.PciHostDevices {
-			log.Log.V(4).Infof("Permitted PCI device in the cluster, ID: %s, resourceName: %s, externalProvider: %t",
-				strings.ToLower(pciDev.PCIVendorSelector),
-				pciDev.ResourceName,
-				pciDev.ExternalResourceProvider)
-			// do not add a device plugin for this resource if it's being provided via an external device plugin
-			if !pciDev.ExternalResourceProvider {
-				supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev.ResourceName
+		supportedPCIDeviceMap, err := validatePciHostDevicesConfiguration(hostDevs.PciHostDevices)
+		if err == nil {
+			singleFunctionPciDevicesMap, multiFunctionPciDevicesMap := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
+			for pciResourceName, resources := range singleFunctionPciDevicesMap {
+				log.Log.V(4).Infof("single-function: Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
+				permittedDevices = append(permittedDevices, NewSingleFunctionPCIDevicePlugin(resources, pciResourceName))
 			}
-		}
-		for pciResourceName, pciDevices := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
-			log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(pciDevices), pciResourceName)
-			// add a device plugin only for new devices
-			permittedDevices = append(permittedDevices, NewPCIDevicePlugin(pciDevices, pciResourceName))
+			for pciResourceName, resources := range multiFunctionPciDevicesMap {
+				log.Log.V(4).Infof("multi-function: Discovered PCIs %d devices on the node for the resource: %s", len(resources.devices), pciResourceName)
+				permittedDevices = append(permittedDevices, NewMultiFunctionPCIDevicePlugin(resources, pciResourceName))
+			}
+		} else {
+			log.Log.Reason(err).Errorf("validation of PciHostDevices configuration failed, %v", err)
 		}
 	}
 	if len(hostDevs.MediatedDevices) != 0 {

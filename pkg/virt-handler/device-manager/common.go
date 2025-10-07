@@ -24,6 +24,7 @@ package device_manager
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -51,6 +52,7 @@ type DeviceHandler interface {
 	CreateMDEVType(mdevType string, parentID string) error
 	RemoveMDEVType(mdevUUID string) error
 	ReadMDEVAvailableInstances(mdevType string, parentID string) (int, error)
+	IsDeviceVirtualFunction(basepath string, pciAddress string) (bool, error)
 }
 
 type DeviceUtilsHandler struct{}
@@ -194,6 +196,16 @@ func (h *DeviceUtilsHandler) ReadMDEVAvailableInstances(mdevType string, parentI
 	}
 
 	return i, nil
+}
+
+func (h *DeviceUtilsHandler) IsDeviceVirtualFunction(basepath string, pciAddress string) (bool, error) {
+	physfnPath := filepath.Join(basepath, pciAddress, "physfn")
+	if _, err := os.Stat(physfnPath); err == nil {
+		return true, nil // VF detected
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err // Unexpected stat error
+	}
+	return false, nil
 }
 
 func waitForGRPCServer(socketPath string, timeout time.Duration) error {
